@@ -11,47 +11,47 @@ An introduction into NetBSD's `autoconf(9)` system and the basics of device driv
 ## Contents
 
 1. Preface
-1. The autoconf(9) system
-  1. config(8)
-  1. ioconf.c and cfdata
-  1. sys/kern/subr autoconf.c
+1. The `autoconf(9)` system
+  1. `config(8)`
+  1. `ioconf.c` and `cfdata`
+  1. `sys/kern/subr_autoconf.c`
   1. Attributes and Locators
   1. Where are my children?
-  1. bus space(9) and bus dma(9)
-1. The autoconf(9) part of the rf(4) driver
+  1. `bus_space(9)` and `bus_dma(9)`
+1. The `autoconf(9)` part of the `rf(4)` driver
   1. Configuration files
     1. The kernel configuration file
-    1. sys/dev/qbus/files.uba
+    1. `sys/dev/qbus/files.uba`
     1. The device numbers
-  1. Data structures for autoconf(9)
-  1. Functions for autoconf(9)
-    1. rfc_match()
-    1. rfc_attach()
-    1. rf_match()
-    1. rf_attach()
+  1. Data structures for `autoconf(9)`
+  1. Functions for `autoconf(9)`
+    1. `rfc_match()`
+    1. `rfc_attach()`
+    1. `rf_match()`
+    1. `rf_attach()`
 1. The core of the driver
   1. Data structures of the driver
     1. Data structures per controller
     1. Data structure per drive
   1. The necessary functions
-    1. rfdump()
-    1. rfsize()
-    1. rfopen()
-    1. rfclose()
-    1. rfread() and rfwrite()
-    1. rfstrategy()
-    1. rfc_intr()
-    1. rfioctl()
-1. rf.c
-1. rfreg.h
+    1. `rfdump()`
+    1. `rfsize()`
+    1. `rfopen()`
+    1. `rfclose()`
+    1. `rfread()` and `rfwrite()`
+    1. `rfstrategy()`
+    1. `rfc_intr()`
+    1. `rfioctl()`
+1. `rf.c`
+1. `rfreg.h`
 1. License
 1. Version History
 1. Bibliography
 
 ## List of Figures
 1. device tree
-1. calling chain of autoconf(9) functions
-1. rf(4)'s interal states.
+1. calling chain of `autoconf(9)` functions
+1. `rf(4)`'s interal states.
 
 ## Preface
 This document is intended to teach the basics of Unix-Kernelprogramming to a
@@ -65,10 +65,10 @@ functions. This document attempts to provide such an introduction, to act as the
 necessary glue between the individual parts. Therefore, I will reference external
 documents, particularly section 9 of the NetBSD manual pages in many places.
 This document is mainly based on the experiences I made when I wrote the driver
-rf(4) (RX01/02 Floppy) for the UnixBus / QBus RX211 8" floppy controller.
+`rf(4)` (*R*X01/02 *F*loppy) for the UnixBus / QBus RX211 8" floppy controller.
 
-8" floppy? Those things existed? Yes. Those were the first floppies, built at
-the end of the 60s / beginning of the 70s. UniBus / QBus? Whatsdat? That's the
+*8" floppy? Those things existed?* Yes. Those were the first floppies, built at
+the end of the 60s / beginning of the 70s. *UniBus / QBus? Whatsdat?* That's the
 most common bus found in VAXen (plural for VAX). The VAX was the machine of the late 70s
 up until the beginning of the 90s. Then it was obsoleted by the Alpha architecture.
 BSD Unix has a long and glorious history on the VAX. [McK 99] But why am I
@@ -78,11 +78,11 @@ a PCIX Bus or anything else. The underlying principles are the same. Besides,
 the hardware used in this example is relatively simplistic, so that we can see the
 essential aspects instead of being hindered by PeeCee idiocrasy.
 
-The following chapter gives a short overview of the autoconf(9) concept in
+The following chapter gives a short overview of the *autoconf(9)* concept in
 NetBSD. Some details have been omitted, and I refer to the according manual
 pages to avoid duplication of information.
 
-The third chapter documents the implementation of the autoconf(9) interface of rf(4).
+The third chapter documents the implementation of the *autoconf(9)* interface of *rf(4)*.
 
 The fourth and last chapter covers the actual driver, i.e. the functionality of
 the driver carrying the data from and to the physical device.
@@ -90,7 +90,7 @@ In the appendix, you will find the complete source code of the driver as well
 as a copy of the referenced manual pages.
 
 Future prospects: In its current form, this document represents only a beginning. A description of a network device driver, the internal functionality of
-bus space(9) and bus dma(9) or what is required to port NetBSD to a new architecture would be possible extensions. Similarly, a discussion of the UVM /
+`bus_space(9)` and `bus_dma(9)` or what is required to port NetBSD to a new architecture would be possible extensions. Similarly, a discussion of the UVM /
 UBC internals or a file system interface would be of interest to implement a new
 file system for example. But at least the last example goes a bit too far away from
 the initial intent of giving an overview or an introduction to device driver programming and would be more suitable for a more extensive document on NetBSD
@@ -99,9 +99,9 @@ Kernel internals, which one day may evolve out of this text.
 Thanks to Hubert Feyrer and Marc Balmer, who took the time to proof-read
 my mental outpourings and provided incitement for some diagrams.
 
-## The autoconf(9) system
-The kernel configuration file is based on three pillars: ioconf.c / cfdata and
-sys/kern/subr autoconf.c. This concept has become known as autoconf .
+## The `autoconf(9)` system
+The kernel configuration file is based on three pillars: `ioconf.c / cfdata` and
+`sys/kern/subr_autoconf.c`. This concept has become known *as autoconf*.
 But what exactly is going on behind the curtain?
 
 ### config(8)
