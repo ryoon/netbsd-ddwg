@@ -1207,40 +1207,43 @@ disklabel(5,9)s at this point. Since we do not support disklabel(5,9) on
 RX01/02 floppies, we just create pseudo disklabel(5,9).
 
 #### rfclose()
-XXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
 int
 rfclose(dev_t dev, int fflag, int devtype, struct proc *p)
 {
-struct rf_softc *rf_sc;
-int unit;
+        struct rf_softc *rf_sc;
+        int unit;
 
-4 THE CORE OF THE DRIVER
-
-36
-
-unit = DISKUNIT(dev);
-if (unit >= rf_cd.cd_ndevs || (rf_sc = rf_cd.cd_devs[unit]) == NULL) {
-return(ENXIO);
+        unit = DISKUNIT(dev);
+        if (unit >= rf_cd.cd_ndevs || (rf_sc = rf_cd.cd_devs[unit]) == NULL) {
+                return(ENXIO);
+        }
+        if ((rf_sc->sc_state & 1 << (DISKPART(dev) + RFS_OPEN_SHIFT)) == 0)
+                panic("rfclose: can not close on non-open drive %s "
+                    "partition %d", rf_sc->sc_dev.dv_xname, DISKPART(dev));
+        else
+                rf_sc->sc_state &= ~(1 << (DISKPART(dev) + RFS_OPEN_SHIFT));
+        if ((rf_sc->sc_state & RFS_OPEN_MASK) == 0)
+                rf_sc->sc_state = 0;
+        return(0);
 }
-if ((rf_sc->sc_state & 1 << (DISKPART(dev) + RFS_OPEN_SHIFT)) == 0)
-panic("rfclose: can not close on non-open drive %s "
-"partition %d", rf_sc->sc_dev.dv_xname, DISKPART(dev));
-else
-rf_sc->sc_state &= ˜(1 << (DISKPART(dev) + RFS_OPEN_SHIFT));
-if ((rf_sc->sc_state & RFS_OPEN_MASK) == 0)
-rf_sc->sc_state = 0;
-return(0);
-}
+```
+
 Closing a device that hasn't been opened before, is a serious problem, and
 causes a kernel panic. In the other case, we simply reset the bit that marks the
 partition as opened. The last if statement checks, if all partitions have been closed
 and if so, all the blocks created by rfopen need to be removed and the softc data
 structur needs to be reinitialized.
-4.2.5 rfread() and rfwrite()
+
+#### rfread() and rfwrite()
 Consisting of:
+
+```
 return( physio( rfstrategy, NULL, dev, B_READ, minphys, uio));
 bzw.
 return( physio( rfstrategy, NULL, dev, B_WRITE, minphys, uio));
+```
+
 If a process wants to read(2) or write(2) data to the character device node,
 these system calls will resolve the mapping of the file descriptor to the device
 nide. The buffer given to read(2)/write(2) is separated by the system call until
@@ -1253,11 +1256,7 @@ physio(9) and sys/kern/kern physio.c. Access of the character device do
 not use the buffer cache, but instead physio(9) will transfer the data immediately
 from and to the memory of the process and the driver.
 
-4 THE CORE OF THE DRIVER
-
-37
-
-4.2.6 rfstrategy()
+#### rfstrategy()
 As mentioned above, this function is the main part of the driver with respect to
 data transfer. It takes the buffers and fills or empties them, but doesn't perform
 any IO operations itself. Instead, rfstrategy() writes these IO requests into one
@@ -1266,19 +1265,25 @@ that reduces seeks of the read/write-head. The queues are emptied by the interru
 handler. Each time, the hardware has completed an IO operation, it causes an
 interrupt. The interrupt handler then registers it as completed and removes it from
 the queue. Then, it initiates the next IO operation waiting in the queue, ...
+
+
+```
 rfstrategy(struct buf *buf)
 {
-struct rf_softc *rf_sc;
-struct rfc_softc *rfc_sc;
-int i;
-i = DISKUNIT(buf->b_dev);
-if (i >= rf_cd.cd_ndevs || (rf_sc = rf_cd.cd_devs[i]) == NULL) {
-buf->b_flags |= B_ERROR;
-buf->b_error = ENXIO;
-biodone(buf);
-return;
-}
-In order to get to the rf sc softc data structure, we do the same dance
+        struct rf_softc *rf_sc;
+        struct rfc_softc *rfc_sc;
+        int i;
+
+        i = DISKUNIT(buf->b_dev);
+        if (i >= rf_cd.cd_ndevs || (rf_sc = rf_cd.cd_devs[i]) == NULL) {
+                buf->b_flags |= B_ERROR;
+                buf->b_error = ENXIO;
+                biodone(buf);
+                return;
+        }
+```
+
+In order to get to the rf_sc softc data structure, we do the same dance
 as before, with the exception of the error handling. A buffer may be treated
 as a work order; different buffers are independent of one another. Remember,
 frstrategy() is the only point of entrance for all rf(4) instances. A buffer
@@ -1286,64 +1291,67 @@ may receive a work order for the first drive and complete it successfully. Anoth
 buffer may be related to a drive that isn't physically present, so that it must fail.
 Or maybe one of the buffers may fail due to a broken sector but the rest of the
 buffers are not affected by this.
+
 The point in time at which the buffer will be "done" is unknown. If the drive
 is not physically present, we can check for it (using the above if statement) when
 calling rfstrategy(). But it's possible that the buffer was sorted way back in
 the queue, in which case it will be worked on much later, after rfstrategy() has
 long since "eaten" the buffer and returned. In other words, finishing a buffer is
 asynchronous to the rfstrategy() function, which is why the kernel needs to be
-
-4 THE CORE OF THE DRIVER
-
-38
-
 signaled when a buffer is ready using biodone(9). If an error occurs, you set a
 flag and pass an appropriate error code accordingly (as we can see above).
-rfc_sc = (struct rfc_softc *)rf_sc->sc_dev.dv_parent;
-/* We are going to operate on a non open dev? PANIC! */
-if ((rf_sc->sc_state & 1 << (DISKPART(buf->b_dev) + RFS_OPEN_SHIFT))
-== 0)
-panic("rfstrategy: can not operate on non-open drive %s "
-"partition %d", rf_sc->sc_dev.dv_xname,
-DISKPART(buf->b_dev));
+
+```
+        rfc_sc = (struct rfc_softc *)rf_sc->sc_dev.dv_parent;
+        /* We are going to operate on a non open dev? PANIC! */
+        if ((rf_sc->sc_state & 1 << (DISKPART(buf->b_dev) + RFS_OPEN_SHIFT))
+            == 0)
+                panic("rfstrategy: can not operate on non-open drive %s "
+                    "partition %d", rf_sc->sc_dev.dv_xname,
+                    DISKPART(buf->b_dev));
+```
+
 The comment says all.
-if (buf->b_bcount == 0) {
-biodone(buf);
-return;
-}
+
+```
+        if (buf->b_bcount == 0) {
+                biodone(buf);
+                return;
+        }
+```
+
 A small optimization. If buf->b bcount == 0, there's nothing to be done
 and we are done with the buffer immediately.
-/*
-* BUFQ_PUT() operates on b_rawblkno. rfstrategy() gets
-* only b_blkno that is partition relative. As a floppy does not
-* have partitions b_rawblkno == b_blkno.
-*/
-buf->b_rawblkno = buf->b_blkno;
-/*
-* from sys/kern/subr_disk.c:
-* Seek sort for disks. We depend on the driver which calls us using
-* b_resid as the current cylinder number.
-*/
-i = splbio();
-if (rfc_sc->sc_curbuf == NULL) {
-rfc_sc->sc_curchild = rf_sc->sc_dnum;
-rfc_sc->sc_curbuf = buf;
-rfc_sc->sc_bufidx = buf->b_un.b_addr;
-rfc_sc->sc_bytesleft = buf->b_bcount;
-rfc_intr(rfc_sc);
 
-4 THE CORE OF THE DRIVER
-
-39
-
-} else {
-buf->b_resid = buf->b_blkno / RX2_SECTORS;
-BUFQ_PUT(&rf_sc->sc_bufq, buf);
-buf->b_resid = 0;
+```
+        /*
+         * BUFQ_PUT() operates on b_rawblkno. rfstrategy() gets
+         * only b_blkno that is partition relative. As a floppy does not
+         * have partitions b_rawblkno == b_blkno.
+         */
+        buf->b_rawblkno = buf->b_blkno;
+        /*
+         * from sys/kern/subr_disk.c:
+         * Seek sort for disks.  We depend on the driver which calls us using
+         * b_resid as the current cylinder number.
+         */
+        i = splbio();
+        if (rfc_sc->sc_curbuf == NULL) {
+                rfc_sc->sc_curchild = rf_sc->sc_dnum;
+                rfc_sc->sc_curbuf = buf;
+                rfc_sc->sc_bufidx = buf->b_un.b_addr;
+                rfc_sc->sc_bytesleft = buf->b_bcount;
+                rfc_intr(rfc_sc);
+        } else {
+                buf->b_resid = buf->b_blkno / RX2_SECTORS;
+                BUFQ_PUT(&rf_sc->sc_bufq, buf);
+                buf->b_resid = 0;
+        }
+        splx(i);
+        return;
 }
-splx(i);
-return;
-}
+```
+
 Let's assume, rfstrategy() receives three buffers shortly after one another.
 The first reads a sector from track 1, the seconds reads a sector from the last track
 and the thirds reads a sector from somewhere in the middle. If rfstrategy()
@@ -1357,39 +1365,42 @@ of "on the way". Fortunately, the driver doesn't need to care too much about
 sorting the buffers and leaves that to BUFQ PUT(). BUFQ PUT() expects the trackor cylinder number (depending on the disk geometry) in the b resid field in order
 to optimize it according to the cylinder numbers. BUFQ PUT() then enters the
 buffer into the buffer queue and sorts is appropriately.
+
 The entire sorting process is, however, not necessary if the controller is currently idle. In that case, rfc sc->sc curbuf == NULL. As the name suggests,
 rfc sc->sc curbuf points to the buffer currently being worked on. If the controller is idle, then the buffer is pointed to the current one and all related variables
 within softc are initialized with it. If a new buffer arrives while the first is being worked on in rfc sc->sc curbuf, they are put in the buffer queue. Calling
 rfc intr() initiates the actual data transfer. The rest is done in rfc intr() in
 the context of an interrupt.
+
 Interruptcontext, what's that exactly anyway, and are there other contexts?
 Simplified, there are three contexts under Unix:
+
 Usercontext: A normal user process utilizes the CPU. The time is the same as
 "'xx% user"' under top(1) or time(1).
+
 Kernelcontext: A userland process has made a system call. Kernel code in privileged mode is executed, but still under the current process space. The time
-
-4 THE CORE OF THE DRIVER
-
-40
-
 is the same as "'xx% system"' under top(1) or time(1).
+
 Interruptcontext: The hardware has caused an interrupt of the code execution
 while the CPU was in user- or kernelcontext. This interrupt has higher
 priority than the user- or kernelcontext. The current state of the CPU is
 saved and the interrupt handler called. The interrupt handler manages the
 hardware and reinstates the saved CPU state, continuing the code execution
 where it left off. User- and kernel code do not know anything about this.
+
 The alert reader already will have noticed a problem here: an interrupt is an
 asynchronous event, which may happen at any time. For example, at the time
 that rfstrategy() manipulates the bufferqueue, adding a new buffer. But the
 interrupt handler of the rf(4) driver also manipulates the buffer queue (it removes
 a buffer). If this happens, then the buffer queue ends up in an inconsistent state.
 Booom, kernel panic, game over.
+
 This is why rfstrategy() has to use splbio(9) in order to assure that no
 interrupt can occur at this time. This function blocks all interrupts until they are released by a call to splx(9). The time, during which interrupts are blocked should
 always be kept to a minimum, since not only interrupts for this particular device
 are blocked, but all interrupts! If interrupt blocks are prolonged, an interrupt for a
 different device might be delayed, reducing the I/O rate.
+
 To be more precise: There are different interrupt priorities. IPL BIO, for example, is rather low and is used by block devices such as disks and floppies. These
 devices are slow anyway and usually have bigger buffers in their hardware on the
 controller. So it doesn't matter, if the device waits a little bit longer on its interrupts. Network cards use IPL NET, which has higher priority over IPL BIO.
@@ -1399,40 +1410,23 @@ the network load and decrease throughput. These priorities make it possible for
 an interrupt of a network card to, well, interrupt the interrupt handler of the disk
 driver, have the network cards driver handle the interrupt and the continue with
 the interrupt handler of the disk driver.
+
 So, it is not only important to block interrupts only for a short period of time,
 but also with the right priority. If the priority is too low, then your own interrupt
 handler can't take the interrupt, if it's too high, other devices throughput may
 suffer. For more information on the relationship among the different priorities,
 see spl(9).
 
-4 THE CORE OF THE DRIVER
-
-41
-
-RFS_NOTINIT
-OK
-
-Error
-
-RFS_PROBING
-Close
-
-RFS_IDLE
-RFS_FBUF
-RFS_WSEC
-
-RFS_RSEC
-RFS_EBUF
-
 Figure 3: rf(4)'s interal states.
 
-4.2.7 rfc intr()
+#### rfc intr()
 Most of the work of the driver, such as filling the buffer and working through the
 buffer queue is done within rfc intr(). In order to perform an operation, the
 driver has to go through a sequence of states. After the first open() call, the state
 is set from RFS NOTINIT to RFS PROBING until the mediums capacity has been
 determined. Then, the driver enters the RFS IDLE state until a buffer containing a
 read or write command arrives.
+
 In order to read or write a sector, two commands needs to be sent to the
 controller. First, a read command RX2CS RSEC (ReadSECtor) to read the internal controller buffer, then the DMA-command RX2CS EBUF (EmptyBUFfer) to
 transfer the data from the controller into the RAM. If not all data has been transferred from the buffer queue, the driver sends the next RX2CS RSEC command,
@@ -1441,10 +1435,6 @@ when writing data they first need to be transferred from RAM into the internal
 controller buffer via DMA RX2CS FBUF (FillBUFfer) so they can then be written
 to the media with a second command RX2CS WSEC (WriteSECtor) until the next
 RX2CS FBUF command ... until the next buffer from the buffer queue arrives.
-
-4 THE CORE OF THE DRIVER
-
-42
 
 These commands correspond to the RFS RSEC, RFS EBUF, RFS FBUF,
 RFS WSEC states.
@@ -1455,6 +1445,7 @@ the buffer queue is not empty, but a new buffer containing data that needs to be
 written follows, a transition from RFS EBUF to takes place. Similarly, there are
 transitions from RFS WSEC to RFS IDLE or RFS RSEC. The frc sendcmd function
 simplifies the sending of commands a little bit.
+
 Due to the length of this function, we only give an explanation of the basics
 and some excerpts with special meaning: The functions consists of tw switch
 statements. The first takes care of finding the last command / state and finish the
@@ -1464,170 +1455,178 @@ sent to the controller or the buffer queue is found to be empty. If an error occ
 the interrupt handler continues at the beginning of the loop and tries to work the
 next buffer. (Some other drivers contains a goto, but since I prefer spaghetti over
 spaghetti code, I chose the loop.)
+
 The following are the excerpts of the program that might be encountered
 when performing a read starting with the RFS IDLE state, beginning with the
 get new buf() helper function.
+
+```
 struct rf_softc*
 get_new_buf( struct rfc_softc *rfc_sc)
 {
-struct rf_softc *rf_sc;
-struct rf_softc *other_drive;
-rf_sc = (struct rf_softc *)rfc_sc->sc_childs[rfc_sc->sc_curchild];
-rfc_sc->sc_curbuf = BUFQ_GET(&rf_sc->sc_bufq);
-if (rfc_sc->sc_curbuf != NULL) {
-rfc_sc->sc_bufidx = rfc_sc->sc_curbuf->b_un.b_addr;
-rfc_sc->sc_bytesleft = rfc_sc->sc_curbuf->b_bcount;
-} else {
-RFS_SETCMD(rf_sc->sc_state, RFS_IDLE);
-other_drive = (struct rf_softc *)
-rfc_sc->sc_childs[ rfc_sc->sc_curchild == 0 ? 1 : 0];
-if (other_drive != NULL
+    struct rf_softc *rf_sc;
+    struct rf_softc *other_drive;
 
-4 THE CORE OF THE DRIVER
-
-43
-
-&& BUFQ_PEEK(&other_drive->sc_bufq) != NULL) {
-rfc_sc->sc_curchild = rfc_sc->sc_curchild == 0 ? 1 : 0;
-rf_sc = other_drive;
-rfc_sc->sc_curbuf = BUFQ_GET(&rf_sc->sc_bufq);
-rfc_sc->sc_bufidx = rfc_sc->sc_curbuf->b_un.b_addr;
-rfc_sc->sc_bytesleft = rfc_sc->sc_curbuf->b_bcount;
-} else
-return(NULL);
+    rf_sc = (struct rf_softc *)rfc_sc->sc_childs[rfc_sc->sc_curchild];
+    rfc_sc->sc_curbuf = BUFQ_GET(&rf_sc->sc_bufq);
+    if (rfc_sc->sc_curbuf != NULL) {
+        rfc_sc->sc_bufidx = rfc_sc->sc_curbuf->b_un.b_addr;
+        rfc_sc->sc_bytesleft = rfc_sc->sc_curbuf->b_bcount;
+    } else {
+        RFS_SETCMD(rf_sc->sc_state, RFS_IDLE);
+        other_drive = (struct rf_softc *)
+            rfc_sc->sc_childs[ rfc_sc->sc_curchild == 0 ? 1 : 0];
+        if (other_drive != NULL
+            && BUFQ_PEEK(&other_drive->sc_bufq) != NULL) {
+            rfc_sc->sc_curchild = rfc_sc->sc_curchild == 0 ? 1 : 0;
+            rf_sc = other_drive;
+            rfc_sc->sc_curbuf = BUFQ_GET(&rf_sc->sc_bufq);
+            rfc_sc->sc_bufidx = rfc_sc->sc_curbuf->b_un.b_addr;
+            rfc_sc->sc_bytesleft = rfc_sc->sc_curbuf->b_bcount;
+        } else
+            return(NULL);
+    }
+    return(rf_sc);
 }
-return(rf_sc);
-}
-This function is called by rfc intr if a buffer is finished in order to receive the next buffer. The controller manages two drives. First, this function checks if another buffer waits in the buffer queue of the current drive
+```
+
+This function is called by rfc_intr if a buffer is finished in order to receive the next buffer. The controller manages two drives. First, this function checks if another buffer waits in the buffer queue of the current drive
 (rfc sc->sc curchild). If so, the next buffer in this queue is sued. If the
 buffer queue is empty, the drive is marked as idle and the buffer queue of the
 next drive (other drive) is checked. If no buffers are available, no further action takes place. If there are any buffers, the function switches the current drive
 (rfc sc->sc curchild) and initializes the next buffer. The return value of the
 function is NULL, if both buffer queues are empty. Otherwise, it's a pointer to the
 softc structure of the drive whose buffer queue is being worked on.
-/* first switch statement */
-case RFS_IDLE: /* controller is idle */
-if (rfc_sc->sc_curbuf->b_bcount
-% ((rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD) != 0) {
-/*
-* can only handle blocks that are a multiple
-* of the physical block size
-*/
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-}
-RFS_SETCMD(rf_sc->sc_state, (rfc_sc->sc_curbuf->b_flags
-& B_READ) != 0 ? RFS_RSEC : RFS_FBUF);
-break;
 
-4 THE CORE OF THE DRIVER
-
-44
+```
+        /* first switch statement */
+        case RFS_IDLE:  /* controller is idle */
+            if (rfc_sc->sc_curbuf->b_bcount
+                % ((rf_sc->sc_state & RFS_DENS) == 0
+                ? RX2_BYTE_SD : RX2_BYTE_DD) != 0) {
+                /*
+                 * can only handle blocks that are a multiple
+                 * of the physical block size
+                 */
+                rfc_sc->sc_curbuf->b_flags |= B_ERROR;
+            }
+            RFS_SETCMD(rf_sc->sc_state, (rfc_sc->sc_curbuf->b_flags
+                & B_READ) != 0 ? RFS_RSEC : RFS_FBUF);
+            break;
+```
 
 The if-statement is a security check. The RFS SETCMD macro simplifies setting
 the rf sc->sc state variable. Depending on whether the current buffer contains
 a read or a write command, it contains RFS RSEC or RFS FBUF.
-/* second switch statement */
-case RFS_RSEC: /* Read Sector */
-i = (rfc_sc->sc_curbuf->b_bcount - rfc_sc->sc_bytesleft
-+ rfc_sc->sc_curbuf->b_blkno * DEV_BSIZE) /
-((rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD);
-if (i > RX2_TRACKS * RX2_SECTORS) {
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-break;
-}
-disk_busy(&rf_sc->sc_disk);
-if (rfc_sendcmd(rfc_sc, RX2CS_RSEC | RX2CS_IE
-| (rf_sc->sc_dnum == 0 ? 0 : RX2CS_US)
-| ((rf_sc->sc_state& RFS_DENS) == 0 ? 0 : RX2CS_DD),
-i % RX2_SECTORS + 1, i / RX2_SECTORS) < 0) {
-disk_unbusy(&rf_sc->sc_disk, 0, 1);
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-}
-break;
+
+```
+        /* second switch statement */
+        case RFS_RSEC:  /* Read Sector */
+            i = (rfc_sc->sc_curbuf->b_bcount - rfc_sc->sc_bytesleft
+                + rfc_sc->sc_curbuf->b_blkno * DEV_BSIZE) /
+                ((rf_sc->sc_state & RFS_DENS) == 0
+                ? RX2_BYTE_SD : RX2_BYTE_DD);
+            if (i > RX2_TRACKS * RX2_SECTORS) {
+                rfc_sc->sc_curbuf->b_flags |= B_ERROR;
+                break;
+            }
+            disk_busy(&rf_sc->sc_disk);
+            if (rfc_sendcmd(rfc_sc, RX2CS_RSEC | RX2CS_IE
+                | (rf_sc->sc_dnum == 0 ? 0 : RX2CS_US)
+                | ((rf_sc->sc_state& RFS_DENS) == 0 ? 0 : RX2CS_DD),
+                i % RX2_SECTORS + 1, i / RX2_SECTORS) < 0) {
+                disk_unbusy(&rf_sc->sc_disk, 0, 1);
+                rfc_sc->sc_curbuf->b_flags |= B_ERROR;
+            }
+            break;
+```
+
 The first instructions computes the logical block number to be read by the
 floppy and stores it in i. Note that the RX02 drive does not use the usual 512
 (DEV BSIZE, the value of buf->b blkno), but 128 Bytes per sector (RX2 BYTE SD)
 in single and 256 Bytes per sector (RX2 BYTE DD) in double density. The ifstatement checks of the sector requested by the buffer is higher than the capacity
 of the floppy and if so, sets the error flag in the buffer and aborts the operation.
 See the explanation in 4.2.3 for details regarding disk busy().
+
 Well, and finally the controller receives the command to read a sector
 (RX2CS RSEC) with the interrupt bit RX2CS IE enabled via rfc sendcmd(). If
 this fails, then the error handler a the end of the loop around the two switch
 statements jumps in:
-The rfc intr() function checks if the error flag has been set after each of the
+
+The rfc_intr() function checks if the error flag has been set after each of the
 two switch statements and brings the driver into a defined state in the case of an
 error:
 
-4 THE CORE OF THE DRIVER
+```
+        if ((rfc_sc->sc_curbuf->b_flags & B_ERROR) != 0) {
+            /*
+             * An error occured while processing this buffer.
+             * Finish it and try to get a new buffer to process.
+             * Return if there are no buffers in the queues.
+             * This loops until the queues are empty or a new
+             * action was successfully scheduled.
+             */
+            rfc_sc->sc_curbuf->b_resid = rfc_sc->sc_bytesleft;
+            rfc_sc->sc_curbuf->b_error = EIO;
+            biodone(rfc_sc->sc_curbuf);
+            rf_sc = get_new_buf( rfc_sc);
+            if (rf_sc == NULL)
+                return;
+            continue;
+        }
+```
 
-45
-
-if ((rfc_sc->sc_curbuf->b_flags & B_ERROR) != 0) {
-/*
-* An error occured while processing this buffer.
-* Finish it and try to get a new buffer to process.
-* Return if there are no buffers in the queues.
-* This loops until the queues are empty or a new
-* action was successfully scheduled.
-*/
-rfc_sc->sc_curbuf->b_resid = rfc_sc->sc_bytesleft;
-rfc_sc->sc_curbuf->b_error = EIO;
-biodone(rfc_sc->sc_curbuf);
-rf_sc = get_new_buf( rfc_sc);
-if (rf_sc == NULL)
-return;
-continue;
-}
 Ok, the interrupt handler has finished and we can return to our old context...
 until the controller has finished the command an causes an interrupt. Then we
 continue with the interrupt handler of the rf(4) driver:
-/* first switch statement */
-case RFS_RSEC: /* Read Sector */ disk_unbusy(&rf_sc->sc_disk, 0, 1);
-/* check for errors */
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS) &
+
+```
+        /* first switch statement */
+        case RFS_RSEC:  /* Read Sector */ disk_unbusy(&rf_sc->sc_disk, 0, 1);
+            /* check for errors */
+            if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS) &
 RX2CS_ERR) != 0) {
-/* should do more verbose error reporting */
-printf("rfc_intr: Error reading sector: %x\n",
+                /* should do more verbose error reporting */
+                printf("rfc_intr: Error reading sector: %x\n",
 bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2ES) );
 rfc_sc->sc_curbuf->b_flags |= B_ERROR; } RFS_SETCMD(rf_sc->sc_state,
 RFS_EBUF); break;
+```
+
 First we need to tell the kernel that the drive is no longer busy, that so far 0
 Bytes have been transferred and that we received a read command. The if statement checks the error flag (RX2CS ERR) in the CSR of the controller and aborts the
 process if necessary. At this point, we could use the RX2CS RSTAT and RX2CS REC
 commands to add some more detailed error diagnostics.
-/* second switch statement */
 
-4 THE CORE OF THE DRIVER
+```
+        /* second switch statement */
+        case RFS_EBUF:  /* Empty Buffer */
+            i = bus_dmamap_load(rfc_sc->sc_dmat, rfc_sc->sc_dmam,
+                rfc_sc->sc_bufidx, (rf_sc->sc_state & RFS_DENS) == 0
+                ? RX2_BYTE_SD : RX2_BYTE_DD,
+                rfc_sc->sc_curbuf->b_proc, BUS_DMA_NOWAIT);
+            if (i != 0) {
+                printf("rfc_intr: Error loading dmamap: %d\n",
+                i);
+                rfc_sc->sc_curbuf->b_flags |= B_ERROR;
+                break;
+            }
+            disk_busy(&rf_sc->sc_disk);
+            if (rfc_sendcmd(rfc_sc, RX2CS_EBUF | RX2CS_IE
+                | ((rf_sc->sc_state & RFS_DENS) == 0 ? 0 : RX2CS_DD)
+                | (rf_sc->sc_dnum == 0 ? 0 : RX2CS_US)
+                | ((rfc_sc->sc_dmam->dm_segs[0].ds_addr
+                & 0x30000) >>4), ((rf_sc->sc_state & RFS_DENS) == 0
+                ? RX2_BYTE_SD : RX2_BYTE_DD) / 2,
+                rfc_sc->sc_dmam->dm_segs[0].ds_addr & 0xffff) < 0) {
+                disk_unbusy(&rf_sc->sc_disk, 0, 1);
+                rfc_sc->sc_curbuf->b_flags |= B_ERROR;
+                bus_dmamap_unload(rfc_sc->sc_dmat,
+                rfc_sc->sc_dmam);
+            }
+            break;
+```
 
-46
-
-case RFS_EBUF: /* Empty Buffer */
-i = bus_dmamap_load(rfc_sc->sc_dmat, rfc_sc->sc_dmam,
-rfc_sc->sc_bufidx, (rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD,
-rfc_sc->sc_curbuf->b_proc, BUS_DMA_NOWAIT);
-if (i != 0) {
-printf("rfc_intr: Error loading dmamap: %d\n",
-i);
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-break;
-}
-disk_busy(&rf_sc->sc_disk);
-if (rfc_sendcmd(rfc_sc, RX2CS_EBUF | RX2CS_IE
-| ((rf_sc->sc_state & RFS_DENS) == 0 ? 0 : RX2CS_DD)
-| (rf_sc->sc_dnum == 0 ? 0 : RX2CS_US)
-| ((rfc_sc->sc_dmam->dm_segs[0].ds_addr
-& 0x30000) >>4), ((rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD) / 2,
-rfc_sc->sc_dmam->dm_segs[0].ds_addr & 0xffff) < 0) {
-disk_unbusy(&rf_sc->sc_disk, 0, 1);
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-bus_dmamap_unload(rfc_sc->sc_dmat,
-rfc_sc->sc_dmam);
-}
-break;
 An upcoming DMA-transfer needs to be registered with the bus dma(9) system. The UniBus has an 18 bit address space, and the QBus has a 22 bit address
 space (at least on VAXen). That means that a UniBus / QBus device can not
 fill the entire address space of the CPU, but only a part of it, similar to the ISA
@@ -1638,1838 +1637,149 @@ the bus adapter of the UniBus / QBus, between UniBus / QBus address space and
 CPU address space, there is a MMU. This MMU can be programmed such that
 any UniBus / QBus address can be translated into any CPU address. This way,
 a UniBus / QBus device can fill the entire CPU adress space via the BusmasterDMA, assuming that the bus adapter MMU has been programmed correctly. If
-
-4 THE CORE OF THE DRIVER
-
-47
-
 there is no such MMU inside the bus adapter, then we are stuck using a "bounce
 buffer", as under ISA (see [Tho]). But we do not need to care about all this when
 writing a driver, bus dmamap load(9) takes care of this.
 The driver can register the floppy as busy as long as the bus dma(9) system
 hands a DMA map to the driver and the actual DMA operation can be initiated
 using the RX2CS EBUF command. And once again, we wait for the next interrupt...
-/* first switch statement */
-case RFS_EBUF: /* Empty Buffer */
-i = (rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD;
-disk_unbusy(&rf_sc->sc_disk, i, 1);
-bus_dmamap_unload(rfc_sc->sc_dmat, rfc_sc->sc_dmam);
-/* check for errors */
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh,
-RX2CS) & RX2CS_ERR) != 0) {
-/* should do more verbose error reporting */
-printf("rfc_intr: Error while DMA: %x\n",
-bus_space_read_2(rfc_sc->sc_iot,
-rfc_sc->sc_ioh, RX2ES));
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-break;
-}
-This call to rfc intr() ends the transfer. disk unbusy(9) tells the guys is
+
+```
+        /* first switch statement */
+        case RFS_EBUF:  /* Empty Buffer */
+            i = (rf_sc->sc_state & RFS_DENS) == 0
+                ? RX2_BYTE_SD : RX2_BYTE_DD;
+            disk_unbusy(&rf_sc->sc_disk, i, 1);
+            bus_dmamap_unload(rfc_sc->sc_dmat, rfc_sc->sc_dmam);
+            /* check for errors */
+            if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh,
+                RX2CS) & RX2CS_ERR) != 0) {
+                /* should do more verbose error reporting */
+                printf("rfc_intr: Error while DMA: %x\n",
+                    bus_space_read_2(rfc_sc->sc_iot,
+                    rfc_sc->sc_ioh, RX2ES));
+                rfc_sc->sc_curbuf->b_flags |= B_ERROR;
+                break;
+            }
+```
+
+This call to rfc_intr() ends the transfer. disk unbusy(9) tells the guys is
 statistics how many bytes have been read, the DMA map is freed and the usual
 error checks are made.
-if (rfc_sc->sc_bytesleft > i) {
-rfc_sc->sc_bytesleft -= i;
-rfc_sc->sc_bufidx += i;
+
+```
+            if (rfc_sc->sc_bytesleft > i) {
+                rfc_sc->sc_bytesleft -= i;
+                rfc_sc->sc_bufidx += i;
+```
+
 The buffer is not quite empty yet, so we need to advance the pointer and prepare the next RFS RSEC command...
-} else {
-biodone(rfc_sc->sc_curbuf);
-rf_sc = get_new_buf( rfc_sc);
-if (rf_sc == NULL)
 
-4 THE CORE OF THE DRIVER
+```
+            } else {
+                biodone(rfc_sc->sc_curbuf);
+                rf_sc = get_new_buf( rfc_sc);
+                if (rf_sc == NULL)
+                    return;
+            }
+            RFS_SETCMD(rf_sc->sc_state,
+                (rfc_sc->sc_curbuf->b_flags & B_READ) != 0
+                ? RFS_RSEC : RFS_FBUF);
+            break;
+```
 
-48
-
-return;
-}
-RFS_SETCMD(rf_sc->sc_state,
-(rfc_sc->sc_curbuf->b_flags & B_READ) != 0
-? RFS_RSEC : RFS_FBUF);
-break;
 Ah! The buffer has successfully and completely been finished, so we can tell
 the rest of the kernel via biodone(9) so. Then we need to check if other buffers
 are waiting in the buffer queue and if so, work on those. If there are no more
 buffers in the queue for this drive, set it to idle and switch to the other drive,
 in case new buffers have been added to that drives queue, while we were busy
 working on the first drive.
-4.2.8 rfioctl()
+
+#### rfioctl()
 This function is the entrance point for the ioctl(2) calls of the device. In this
 case, only die IOCTLs to read the disklabel(5,9) are absolutely necessary, all
 other IOCTLs are not required or do not make sense in this driver. The RX02 drive
 can not be blocked by the software, the medium can not be ejected, the hardware
 is incapable of performing a low-level format...
+
+```
 int
 rfioctl(dev_t dev, u_long cmd, caddr_t data, int fflag, struct proc *p)
 {
-struct rf_softc *rf_sc;
-int unit;
-unit = DISKUNIT(dev);
-if (unit >= rf_cd.cd_ndevs || (rf_sc = rf_cd.cd_devs[unit]) == NULL) {
-return(ENXIO);
-}
-/* We are going to operate on a non open dev? PANIC! */
-if (rf_sc->sc_open == 0) {
-panic("rfstrategy: can not operate on non-open drive %s (2)",
-rf_sc->sc_dev.dv_xname);
-}
-switch (cmd) {
-
-4 THE CORE OF THE DRIVER
-
-49
-
-/* get and set disklabel; DIOCGPART used internally */
-case DIOCGDINFO: /* get */
-memcpy(data, rf_sc->sc_disk.dk_label,
-sizeof(struct disklabel));
-return(0);
-case DIOCSDINFO: /* set */
-return(0);
-case DIOCWDINFO: /* set, update disk */
-return(0);
-case DIOCGPART: /* get partition */
-((struct partinfo *)data)->disklab = rf_sc->sc_disk.dk_label;
-((struct partinfo *)data)->part =
-&rf_sc->sc_disk.dk_label->d_partitions[DISKPART(dev)];
-return(0);
-/* do format operation, read or write */
-case DIOCRFORMAT:
-break;
-case DIOCWFORMAT:
-break;
-case DIOCSSTEP: /* set step rate */
-break;
-case DIOCSRETRIES: /* set # of retries */
-break;
-case DIOCKLABEL: /* keep/drop label on close? */
-break;
-case DIOCWLABEL: /* write en/disable label */
-break;
-/*
-
-case DIOCSBAD: / * set kernel dkbad */
-break; /* */
-case DIOCEJECT: /* eject removable disk */
-break;
-case ODIOCEJECT: /* eject removable disk */
-break;
-case DIOCLOCK: /* lock/unlock pack */
-break;
-
-4 THE CORE OF THE DRIVER
-
-/* get default label, clear label */
-case DIOCGDEFLABEL:
-break;
-case DIOCCLRLABEL:
-break;
-default:
-return(ENOTTY);
-}
-return(ENOTTY);
-}
-
-50
-
-A RF.C
-
-51
-
-A rf.c
-/*
-* Copyright (c) 2002 Jochen Kunz.
-* All rights reserved.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions
-* are met:
-* 1. Redistributions of source code must retain the above copyright
-*
-notice, this list of conditions and the following disclaimer.
-* 2. Redistributions in binary form must reproduce the above copyright
-*
-notice, this list of conditions and the following disclaimer in the
-*
-documentation and/or other materials provided with the distribution.
-* 3. The name of Jochen Kunz may not be used to endorse or promote
-*
-products derived from this software without specific prior
-*
-written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY JOCHEN KUNZ
-* ''AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-* TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-* PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL JOCHEN KUNZ
-* BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-* CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-* SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-* INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-* CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-* ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-* POSSIBILITY OF SUCH DAMAGE.
-*/
-/*
-TODO:
-- Better LBN bound checking, block padding for SD disks.
-- Formating / "Set Density"
-- Better error handling / detaild error reason reportnig.
-*/
-/* autoconfig stuff */
-#include <sys/param.h>
-
-A RF.C
-#include
-#include
-#include
-#include
-
-52
-<sys/device.h>
-<sys/conf.h>
-"locators.h"
-"ioconf.h"
-
-/* bus_space / bus_dma */
-#include <machine/bus.h>
-/* UniBus / QBus specific stuff */
-#include <dev/qbus/ubavar.h>
-/* disk interface */
-#include <sys/types.h>
-#include <sys/disklabel.h>
-#include <sys/disk.h>
-/* general system data and functions */
-#include <sys/systm.h>
-#include <sys/ioctl.h>
-#include <sys/ioccom.h>
-/* physio / buffer handling */
-#include <sys/buf.h>
-/* tsleep / sleep / wakeup */
-#include <sys/proc.h>
-/* hz for above */
-#include <sys/kernel.h>
-/* bitdefinitions for RX211 */
-#include <dev/qbus/rfreg.h>
-
-#define
-#define
-#define
-#define
-#define
-#define
-#define
-
-RFS_DENS
-RFS_AD
-RFS_NOTINIT
-RFS_PROBING
-RFS_FBUF
-RFS_EBUF
-RFS_WSEC
-
-0x0001
-0x0002
-0x0000
-0x0010
-0x0020
-0x0030
-0x0040
-
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-
-single or double density */
-density auto detect */
-not initialized */
-density detect / verify started */
-Fill Buffer */
-Empty Buffer */
-Write Sector */
-
-A RF.C
-#define
-#define
-#define
-#define
-#define
-#define
-#define
-#define
-#define
-#define
-#define
-#define
-#define
-
-RFS_RSEC
-0x0050
-RFS_SMD
-0x0060
-RFS_RSTAT
-0x0070
-RFS_WDDS
-0x0080
-RFS_REC
-0x0090
-RFS_IDLE
-0x00a0
-RFS_CMDS
-0x00f0
-RFS_OPEN_A
-0x0100
-RFS_OPEN_B
-0x0200
-RFS_OPEN_C
-0x0400
-RFS_OPEN_MASK
-0x0f00
-RFS_OPEN_SHIFT 8
-RFS_SETCMD(rf, state)
-
-53
-/* Read Sector */
-/* Set Media Density */
-/* Read Status */
-/* Write Deleted Data Sector */
-/* Read Error Code */
-/* controller is idle */
-/* command mask */
-/* partition a open */
-/* partition b open */
-/* partition c open */
-/* mask for open partitions */
-/* to shift 1 to get RFS_OPEN_A */
-((rf) = ((rf) & ˜RFS_CMDS) | (state))
-
-/* autoconfig stuff */
-static int rfc_match(struct device *, struct cfdata *, void *);
-static void rfc_attach(struct device *, struct device *, void *);
-static int rf_match(struct device *, struct cfdata *, void *);
-static void rf_attach(struct device *, struct device *, void *);
-static int rf_print(void *, const char *);
-/* device interfce functions / interface to disk(9) */
-dev_type_open(rfopen);
-dev_type_close(rfclose);
-dev_type_read(rfread);
-dev_type_write(rfwrite);
-dev_type_ioctl(rfioctl);
-dev_type_strategy(rfstrategy);
-dev_type_dump(rfdump);
-dev_type_size(rfsize);
-
-/* Entries in block and character major device number switch table. */
-const struct bdevsw rf_bdevsw = {
-rfopen,
-rfclose,
-rfstrategy,
-rfioctl,
-
-A RF.C
-
-54
-
-rfdump,
-rfsize,
-D_DISK
-};
-const struct cdevsw rf_cdevsw = {
-rfopen,
-rfclose,
-rfread,
-rfwrite,
-rfioctl,
-nostop,
-notty,
-nopoll,
-nommap,
-nokqfilter,
-D_DISK
-};
-
-struct rfc_softc {
-struct device sc_dev;
-struct device *sc_childs[2];
-struct evcnt sc_intr_count;
-struct buf *sc_curbuf;
-bus_space_tag_t sc_iot;
-bus_space_handle_t sc_ioh;
-bus_dma_tag_t sc_dmat;
-bus_dmamap_t sc_dmam;
-caddr_t sc_bufidx;
-int sc_curchild;
-int sc_bytesleft;
-u_int8_t type;
-};
-
-CFATTACH_DECL(
-rfc,
-
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-
-common device data */
-child devices */
-Interrupt counter for statistics */
-buf that is currently in work */
-bus_space IO tag */
-bus_space IO handle */
-bus_dma DMA tag */
-bus_dma DMA map */
-current position in buffer data */
-child whose bufq is in work */
-bytes left to transfer */
-controller type, 1 or 2 */
-
-A RF.C
-
-55
-
-sizeof(struct rfc_softc),
-rfc_match,
-rfc_attach,
-NULL,
-NULL
-);
-
-struct rf_softc {
-struct device sc_dev;
-struct disk sc_disk;
-struct bufq_state sc_bufq;
-int sc_state;
-u_int8_t sc_dnum;
-};
-
-/*
-/*
-/*
-/*
-/*
-
-common device data */
-common disk device data */
-queue of pending transfers */
-state of drive */
-drive number, 0 or 1 */
-
-CFATTACH_DECL(
-rf,
-sizeof(struct rf_softc),
-rf_match,
-rf_attach,
-NULL,
-NULL
-);
-
-struct rfc_attach_args {
-u_int8_t type;
-u_int8_t dnum;
-};
-
-struct dkdriver rfdkdriver = {
-rfstrategy
-};
-
-/* controller type, 1 or 2 */
-/* drive number, 0 or 1 */
-
-A RF.C
-
-56
-
-/* helper functions */
-int rfc_sendcmd(struct rfc_softc *, int, int, int);
-struct rf_softc* get_new_buf( struct rfc_softc *);
-static void rfc_intr(void *);
-
-/*
-* Issue a reset command to the controller and look for the bits in
-* RX2CS and RX2ES.
-* RX2CS_RX02 and / or RX2CS_DD can be set,
-* RX2ES has to be set, all other bits must be 0
-*/
-int
-rfc_match(struct device *parent, struct cfdata *match, void *aux)
-{
-struct uba_attach_args *ua = aux;
-int i;
-/* Issue reset command. */
-bus_space_write_2(ua->ua_iot, ua->ua_ioh, RX2CS, RX2CS_INIT);
-/* Wait for the controller to become ready, that is when
-* RX2CS_DONE, RX2ES_RDY and RX2ES_ID are set. */
-for (i = 0 ; i < 20 ; i++) {
-if ((bus_space_read_2(ua->ua_iot, ua->ua_ioh, RX2CS)
-& RX2CS_DONE) != 0
-&& (bus_space_read_2(ua->ua_iot, ua->ua_ioh, RX2ES)
-& (RX2ES_RDY | RX2ES_ID)) != 0)
-break;
-DELAY(100000); /* wait 100ms */
-}
-/*
-* Give up if the timeout has elapsed
-* and the controller is not ready.
-*/
-if (i >= 20)
-return(0);
-
-A RF.C
-
-57
-
-/*
-* Issue a Read Status command with interrupt enabled.
-* The uba(4) driver wants to catch the interrupt to get the
-* interrupt vector and level of the device
-*/
-bus_space_write_2(ua->ua_iot, ua->ua_ioh, RX2CS,
-RX2CS_RSTAT | RX2CS_IE);
-/*
-* Wait for command to finish, ignore errors and
-* abort if the controller does not respond within the timeout
-*/
-for (i = 0 ; i < 20 ; i++) {
-if ((bus_space_read_2(ua->ua_iot, ua->ua_ioh, RX2CS)
-& (RX2CS_DONE | RX2CS_IE)) != 0
-&& (bus_space_read_2(ua->ua_iot, ua->ua_ioh, RX2ES)
-& RX2ES_RDY) != 0 )
-return(1);
-DELAY(100000); /* wait 100ms */
-}
-return(0);
-}
-
-/* #define RX02_PROBE 1 */
-#ifdef RX02_PROBE
-/*
-* Probe the density of an inserted floppy disk.
-* This is done by reading a sector from disk.
-* Return -1 on error, 0 on SD and 1 on DD.
-*/
-int rfcprobedens(struct rfc_softc *, int);
-int
-rfcprobedens(struct rfc_softc *rfc_sc, int dnum)
-{
-int dens_flag;
-int i;
-dens_flag = 0;
-do {
-
-A RF.C
-
-58
-
-bus_space_write_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS,
-RX2CS_RSEC | (dens_flag == 0 ? 0 : RX2CS_DD)
-| (dnum == 0 ? 0 : RX2CS_US));
-/*
-* Transfer request set?
-* Wait 50us, the controller needs this time to setle
-*/
-DELAY(50);
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS)
-& RX2CS_TR) == 0) {
-printf("%s: did not respond to Read Sector CMD(1)\n",
-rfc_sc->sc_dev.dv_xname);
-return(-1);
-}
-bus_space_write_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2SA, 1);
-/* Wait 50us, the controller needs this time to setle */
-DELAY(50);
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS)
-& RX2CS_TR) == 0) {
-printf("%s: did not respond to Read Sector CMD(2)\n",
-rfc_sc->sc_dev.dv_xname);
-return(-1);
-}
-bus_space_write_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2TA, 1);
-/* Wait for the command to finish */
-for (i = 0 ; i < 200 ; i++) {
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh,
-RX2CS) & RX2CS_DONE) != 0)
-break;
-DELAY(10000);
-/* wait 10ms */
-}
-if (i >= 200) {
-printf("%s: did not respond to Read Sector CMD(3)\n",
-rfc_sc->sc_dev.dv_xname);
-return(-1);
-}
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS)
-& RX2CS_ERR) == 0)
-return(dens_flag);
-} while (rfc_sc->type == 2 && dens_flag++ == 0);
-
-A RF.C
-
-59
-
-return(-1);
-}
-#endif /* RX02_PROBE */
-
-void
-rfc_attach(struct device *parent, struct device *self, void *aux)
-{
-struct rfc_softc *rfc_sc = (struct rfc_softc *)self;
-struct uba_attach_args *ua = aux;
-struct rfc_attach_args rfc_aa;
-int i;
-rfc_sc->sc_iot = ua->ua_iot;
-rfc_sc->sc_ioh = ua->ua_ioh;
-rfc_sc->sc_dmat = ua->ua_dmat;
-rfc_sc->sc_curbuf = NULL;
-/* Tell the QBus busdriver about our interrupt handler. */
-uba_intr_establish(ua->ua_icookie, ua->ua_cvec, rfc_intr, rfc_sc,
-&rfc_sc->sc_intr_count);
-/* Attach to the interrupt counter, see evcnt(9) */
-evcnt_attach_dynamic(&rfc_sc->sc_intr_count, EVCNT_TYPE_INTR,
-ua->ua_evcnt, rfc_sc->sc_dev.dv_xname, "intr");
-/* get a bus_dma(9) handle */
-i = bus_dmamap_create(rfc_sc->sc_dmat, RX2_BYTE_DD, 1, RX2_BYTE_DD, 0,
-BUS_DMA_ALLOCNOW, &rfc_sc->sc_dmam);
-if (i != 0) {
-printf("rfc_attach: Error creating bus dma map: %d\n", i);
-return;
-}
-/* Issue reset command. */
-bus_space_write_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS, RX2CS_INIT);
-/*
-* Wait for the controller to become ready, that is when
-* RX2CS_DONE, RX2ES_RDY and RX2ES_ID are set.
-*/
-for (i = 0 ; i < 20 ; i++) {
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS)
-
-A RF.C
-
-60
-& RX2CS_DONE) != 0
-&& (bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2ES)
-& (RX2ES_RDY | RX2ES_ID)) != 0)
-break;
-DELAY(100000); /* wait 100ms */
-
-}
-/*
-* Give up if the timeout has elapsed
-* and the controller is not ready.
-*/
-if (i >= 20) {
-printf(": did not respond to INIT CMD\n");
-return;
-}
-/* Is ths a RX01 or a RX02? */
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS)
-& RX2CS_RX02) != 0) {
-rfc_sc->type = 2;
-rfc_aa.type = 2;
-} else {
-rfc_sc->type = 1;
-rfc_aa.type = 1;
-}
-printf(": RX0%d\n", rfc_sc->type);
-#ifndef RX02_PROBE
-/*
-* Bouth disk drievs and the controller are one physical unit.
-* If we found the controller, there will be bouth disk drievs.
-* So attach them.
-*/
-rfc_aa.dnum = 0;
-rfc_sc->sc_childs[0] = config_found(&rfc_sc->sc_dev, &rfc_aa,rf_print);
-rfc_aa.dnum = 1;
-rfc_sc->sc_childs[1] = config_found(&rfc_sc->sc_dev, &rfc_aa,rf_print);
-#else /* RX02_PROBE */
-/*
-* There are clones of the DEC RX system with standard shugart
-* interface. In this case we can not be sure that there are
-* bouth disk drievs. So we want to do a detection of attached
-
-A RF.C
-
-61
-
-* drives. This is done by reading a sector from disk. This means
-* that there must be a formated disk in the drive at boot time.
-* This is bad, but I did not find an other way to detect the
-* (non)existence of a floppy drive.
-*/
-if (rfcprobedens(rfc_sc, 0) >= 0) {
-rfc_aa.dnum = 0;
-rfc_sc->sc_childs[0] = config_found(&rfc_sc->sc_dev, &rfc_aa,
-rf_print);
-} else
-rfc_sc->sc_childs[0] = NULL;
-if (rfcprobedens(rfc_sc, 1) >= 0) {
-rfc_aa.dnum = 1;
-rfc_sc->sc_childs[1] = config_found(&rfc_sc->sc_dev, &rfc_aa,
-rf_print);
-} else
-rfc_sc->sc_childs[1] = NULL;
-#endif /* RX02_PROBE */
-return;
-}
-
-int
-rf_match(struct device *parent, struct cfdata *match, void *aux)
-{
-struct rfc_attach_args *rfc_aa = aux;
-/*
-* Only attach if the locator is wildcarded or
-* if the specified locator addresses the current device.
-*/
-if (match->cf_loc[RFCCF_DRIVE] == RFCCF_DRIVE_DEFAULT ||
-match->cf_loc[RFCCF_DRIVE] == rfc_aa->dnum)
-return(1);
-return(0);
-}
-
-A RF.C
-
-62
-
-void
-rf_attach(struct device *parent, struct device *self, void *aux)
-{
-struct rf_softc *rf_sc = (struct rf_softc *)self;
-struct rfc_attach_args *rfc_aa = (struct rfc_attach_args *)aux;
-struct rfc_softc *rfc_sc;
-struct disklabel *dl;
-rfc_sc = (struct rfc_softc *)rf_sc->sc_dev.dv_parent;
-rf_sc->sc_dnum = rfc_aa->dnum;
-rf_sc->sc_state = 0;
-rf_sc->sc_disk.dk_name = rf_sc->sc_dev.dv_xname;
-rf_sc->sc_disk.dk_driver = &rfdkdriver;
-disk_attach(&rf_sc->sc_disk);
-dl = rf_sc->sc_disk.dk_label;
-dl->d_type = DTYPE_FLOPPY;
-/* drive type */
-dl->d_magic = DISKMAGIC;
-/* the magic number */
-dl->d_magic2 = DISKMAGIC;
-dl->d_typename[0] = 'R';
-dl->d_typename[1] = 'X';
-dl->d_typename[2] = '0';
-dl->d_typename[3] = rfc_sc->type == 1 ? '1' : '2';
-/* type name */
-dl->d_typename[4] = '\0';
-dl->d_secsize = DEV_BSIZE;
-/* bytes per sector */
-/*
-* Fill in some values to have a initialized data structure. Some
-* values will be reset by rfopen() depending on the actual density.
-*/
-dl->d_nsectors = RX2_SECTORS;
-/* sectors per track */
-dl->d_ntracks = 1;
-dl->d_ncylinders = RX2_TRACKS;
-/* cylinders per unit */
-dl->d_secpercyl = RX2_SECTORS;
-/* sectors per cylinder */
-dl->d_secperunit = RX2_SECTORS * RX2_TRACKS;
-/* sectors per unit */
-dl->d_rpm = 360;
-/* rotational speed */
-dl->d_interleave = 1;
-/* hardware sector interleave */
-/* number of partitions in following */
-dl->d_npartitions = MAXPARTITIONS;
-dl->d_bbsize = 0;
-/* size of boot area at sn0, bytes */
-dl->d_sbsize = 0;
-/* max size of fs superblock, bytes */
-/* number of sectors in partition */
-
-/*
-
-A RF.C
-
-63
-
-dl->d_partitions[0].p_size = 501;
-dl->d_partitions[0].p_offset = 0;
-/* starting sector */
-dl->d_partitions[0].p_fsize = 0;
-/* fs basic fragment size
-dl->d_partitions[0].p_fstype = 0;
-/* fs type */
-dl->d_partitions[0].p_frag = 0;
-/* fs fragments per block
-dl->d_partitions[1].p_size = RX2_SECTORS * RX2_TRACKS / 2;
-dl->d_partitions[1].p_offset = 0;
-/* starting sector */
-dl->d_partitions[1].p_fsize = 0;
-/* fs basic fragment size
-dl->d_partitions[1].p_fstype = 0;
-/* fs type */
-dl->d_partitions[1].p_frag = 0;
-/* fs fragments per block
-dl->d_partitions[2].p_size = RX2_SECTORS * RX2_TRACKS;
-dl->d_partitions[2].p_offset = 0;
-/* starting sector */
-dl->d_partitions[2].p_fsize = 0;
-/* fs basic fragment size
-dl->d_partitions[2].p_fstype = 0;
-/* fs type */
-dl->d_partitions[2].p_frag = 0;
-/* fs fragments per block
-bufq_alloc(&rf_sc->sc_bufq, BUFQ_DISKSORT | BUFQ_SORT_CYLINDER);
-printf("\n");
-return;
-}
-
-int
-rf_print(void *aux, const char *name)
-{
-struct rfc_attach_args *rfc_aa = aux;
-if (name != NULL)
-aprint_normal("RX0%d at %s", rfc_aa->type, name);
-aprint_normal(" drive %d", rfc_aa->dnum);
-return(UNCONF);
-}
-
-/* Send a command to the controller */
-int
-rfc_sendcmd(struct rfc_softc *rfc_sc, int cmd, int data1, int data2)
-{
-
-*/
-*/
-
-*/
-*/
-
-*/
-*/
-
-A RF.C
-
-64
-
-/* Write command to CSR. */
-bus_space_write_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS, cmd);
-/* Wait 50us, the controller needs this time to setle. */
-DELAY(50);
-/* Write parameter 1 to DBR */
-if ((cmd & RX2CS_FC) != RX2CS_RSTAT) {
-/* Transfer request set? */
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS)
-& RX2CS_TR) == 0) {
-printf("%s: did not respond to CMD %x (1)\n",
-rfc_sc->sc_dev.dv_xname, cmd);
-return(-1);
-}
-bus_space_write_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2DB,
-data1);
-}
-/* Write parameter 2 to DBR */
-if ((cmd & RX2CS_FC) <= RX2CS_RSEC || (cmd & RX2CS_FC) == RX2CS_WDDS) {
-/* Wait 50us, the controller needs this time to setle. */
-DELAY(50);
-/* Transfer request set? */
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS)
-& RX2CS_TR) == 0) {
-printf("%s: did not respond to CMD %x (2)\n",
-rfc_sc->sc_dev.dv_xname, cmd);
-return(-1);
-}
-bus_space_write_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2DB,
-data2);
-}
-return(1);
-}
-
-void
-rfstrategy(struct buf *buf)
-{
-struct rf_softc *rf_sc;
-struct rfc_softc *rfc_sc;
-
-A RF.C
-
-65
-
-int i;
-i = DISKUNIT(buf->b_dev);
-if (i >= rf_cd.cd_ndevs || (rf_sc = rf_cd.cd_devs[i]) == NULL) {
-buf->b_flags |= B_ERROR;
-buf->b_error = ENXIO;
-biodone(buf);
-return;
-}
-rfc_sc = (struct rfc_softc *)rf_sc->sc_dev.dv_parent;
-/* We are going to operate on a non open dev? PANIC! */
-if ((rf_sc->sc_state & 1 << (DISKPART(buf->b_dev) + RFS_OPEN_SHIFT))
-== 0)
-panic("rfstrategy: can not operate on non-open drive %s "
-"partition %d", rf_sc->sc_dev.dv_xname,
-DISKPART(buf->b_dev));
-if (buf->b_bcount == 0) {
-biodone(buf);
-return;
-}
-/*
-* BUFQ_PUT() operates on b_rawblkno. rfstrategy() gets
-* only b_blkno that is partition relative. As a floppy does not
-* have partitions b_rawblkno == b_blkno.
-*/
-buf->b_rawblkno = buf->b_blkno;
-/*
-* from sys/kern/subr_disk.c:
-* Seek sort for disks. We depend on the driver which calls us using
-* b_resid as the current cylinder number.
-*/
-i = splbio();
-if (rfc_sc->sc_curbuf == NULL) {
-rfc_sc->sc_curchild = rf_sc->sc_dnum;
-rfc_sc->sc_curbuf = buf;
-rfc_sc->sc_bufidx = buf->b_un.b_addr;
-rfc_sc->sc_bytesleft = buf->b_bcount;
-rfc_intr(rfc_sc);
-} else {
-buf->b_resid = buf->b_blkno / RX2_SECTORS;
-
-A RF.C
-
-66
-BUFQ_PUT(&rf_sc->sc_bufq, buf);
-buf->b_resid = 0;
-
-}
-splx(i);
-return;
-}
-
-/*
-* Look if there is an other buffer in the bufferqueue of this drive
-* and start to process it if there is one.
-* If the bufferqueue is empty, look at the bufferqueue of the other drive
-* that is attached to this controller.
-* Start procesing the bufferqueue of the other drive if it isn't empty.
-* Return a pointer to the softc structure of the drive that is now
-* ready to process a buffer or NULL if there is no buffer in either queues.
-*/
-struct rf_softc*
-get_new_buf( struct rfc_softc *rfc_sc)
-{
-struct rf_softc *rf_sc;
-struct rf_softc *other_drive;
-rf_sc = (struct rf_softc *)rfc_sc->sc_childs[rfc_sc->sc_curchild];
-rfc_sc->sc_curbuf = BUFQ_GET(&rf_sc->sc_bufq);
-if (rfc_sc->sc_curbuf != NULL) {
-rfc_sc->sc_bufidx = rfc_sc->sc_curbuf->b_un.b_addr;
-rfc_sc->sc_bytesleft = rfc_sc->sc_curbuf->b_bcount;
-} else {
-RFS_SETCMD(rf_sc->sc_state, RFS_IDLE);
-other_drive = (struct rf_softc *)
-rfc_sc->sc_childs[ rfc_sc->sc_curchild == 0 ? 1 : 0];
-if (other_drive != NULL
-&& BUFQ_PEEK(&other_drive->sc_bufq) != NULL) {
-rfc_sc->sc_curchild = rfc_sc->sc_curchild == 0 ? 1 : 0;
-rf_sc = other_drive;
-rfc_sc->sc_curbuf = BUFQ_GET(&rf_sc->sc_bufq);
-rfc_sc->sc_bufidx = rfc_sc->sc_curbuf->b_un.b_addr;
-rfc_sc->sc_bytesleft = rfc_sc->sc_curbuf->b_bcount;
-
-A RF.C
-
-67
-} else
-return(NULL);
-
-}
-return(rf_sc);
-}
-
-void
-rfc_intr(void *intarg)
-{
-struct rfc_softc *rfc_sc = intarg;
-struct rf_softc *rf_sc;
-int i;
-rf_sc = (struct rf_softc *)rfc_sc->sc_childs[rfc_sc->sc_curchild];
-do {
-/*
-* First clean up from previous command...
-*/
-switch (rf_sc->sc_state & RFS_CMDS) {
-case RFS_PROBING:
-/* density detect / verify started */
-disk_unbusy(&rf_sc->sc_disk, 0, 1);
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh,
-RX2CS) & RX2CS_ERR) == 0) {
-RFS_SETCMD(rf_sc->sc_state, RFS_IDLE);
-wakeup(rf_sc);
-} else {
-if (rfc_sc->type == 2
-&& (rf_sc->sc_state & RFS_DENS) == 0
-&& (rf_sc->sc_state & RFS_AD) != 0) {
-/* retry at DD */
-rf_sc->sc_state |= RFS_DENS;
-disk_busy(&rf_sc->sc_disk);
-if (rfc_sendcmd(rfc_sc, RX2CS_RSEC
-| RX2CS_IE | RX2CS_DD |
-(rf_sc->sc_dnum == 0 ? 0 :
-RX2CS_US), 1, 1) < 0) {
-disk_unbusy(&rf_sc->sc_disk,
-0, 1);
-
-A RF.C
-
-68
-RFS_SETCMD(rf_sc->sc_state,
-RFS_NOTINIT);
-wakeup(rf_sc);
-}
-} else {
-printf("%s: density error.\n",
-rf_sc->sc_dev.dv_xname);
-RFS_SETCMD(rf_sc->sc_state,RFS_NOTINIT);
-wakeup(rf_sc);
-}
-}
-return;
-case RFS_IDLE: /* controller is idle */
-if (rfc_sc->sc_curbuf->b_bcount
-% ((rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD) != 0) {
-/*
-* can only handle blocks that are a multiple
-* of the physical block size
-*/
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-}
-RFS_SETCMD(rf_sc->sc_state, (rfc_sc->sc_curbuf->b_flags
-& B_READ) != 0 ? RFS_RSEC : RFS_FBUF);
-break;
-case RFS_RSEC: /* Read Sector */
-disk_unbusy(&rf_sc->sc_disk, 0, 1);
-/* check for errors */
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh,
-RX2CS) & RX2CS_ERR) != 0) {
-/* should do more verbose error reporting */
-printf("rfc_intr: Error reading sector: %x\n",
-bus_space_read_2(rfc_sc->sc_iot,
-rfc_sc->sc_ioh, RX2ES) );
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-}
-RFS_SETCMD(rf_sc->sc_state, RFS_EBUF);
-break;
-case RFS_WSEC: /* Write Sector */
-i = (rf_sc->sc_state & RFS_DENS) == 0
-
-A RF.C
-
-69
-? RX2_BYTE_SD : RX2_BYTE_DD;
-disk_unbusy(&rf_sc->sc_disk, i, 0);
-/* check for errors */
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh,
-RX2CS) & RX2CS_ERR) != 0) {
-/* should do more verbose error reporting */
-printf("rfc_intr: Error writing sector: %x\n",
-bus_space_read_2(rfc_sc->sc_iot,
-rfc_sc->sc_ioh, RX2ES) );
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-break;
-}
-if (rfc_sc->sc_bytesleft > i) {
-rfc_sc->sc_bytesleft -= i;
-rfc_sc->sc_bufidx += i;
-} else {
-biodone(rfc_sc->sc_curbuf);
-rf_sc = get_new_buf( rfc_sc);
-if (rf_sc == NULL)
-return;
-}
-RFS_SETCMD(rf_sc->sc_state,
-(rfc_sc->sc_curbuf->b_flags & B_READ) != 0
-? RFS_RSEC : RFS_FBUF);
-break;
-case RFS_FBUF: /* Fill Buffer */
-disk_unbusy(&rf_sc->sc_disk, 0, 0);
-bus_dmamap_unload(rfc_sc->sc_dmat, rfc_sc->sc_dmam);
-/* check for errors */
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh,
-RX2CS) & RX2CS_ERR) != 0) {
-/* should do more verbose error reporting */
-printf("rfc_intr: Error while DMA: %x\n",
-bus_space_read_2(rfc_sc->sc_iot,
-rfc_sc->sc_ioh, RX2ES));
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-}
-RFS_SETCMD(rf_sc->sc_state, RFS_WSEC);
-break;
-case RFS_EBUF: /* Empty Buffer */
-
-A RF.C
-
-70
-i = (rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD;
-disk_unbusy(&rf_sc->sc_disk, i, 1);
-bus_dmamap_unload(rfc_sc->sc_dmat, rfc_sc->sc_dmam);
-/* check for errors */
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh,
-RX2CS) & RX2CS_ERR) != 0) {
-/* should do more verbose error reporting */
-printf("rfc_intr: Error while DMA: %x\n",
-bus_space_read_2(rfc_sc->sc_iot,
-rfc_sc->sc_ioh, RX2ES));
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-break;
-}
-if (rfc_sc->sc_bytesleft > i) {
-rfc_sc->sc_bytesleft -= i;
-rfc_sc->sc_bufidx += i;
-} else {
-biodone(rfc_sc->sc_curbuf);
-rf_sc = get_new_buf( rfc_sc);
-if (rf_sc == NULL)
-return;
-}
-RFS_SETCMD(rf_sc->sc_state,
-(rfc_sc->sc_curbuf->b_flags & B_READ) != 0
-? RFS_RSEC : RFS_FBUF);
-break;
-case RFS_NOTINIT: /* Device is not open */
-case RFS_SMD:
-/* Set Media Density */
-case RFS_RSTAT: /* Read Status */
-case RFS_WDDS: /* Write Deleted Data Sector */
-case RFS_REC:
-/* Read Error Code */
-default:
-panic("Impossible state in rfc_intr(1).\n");
-}
-if ((rfc_sc->sc_curbuf->b_flags & B_ERROR) != 0) {
-/*
-* An error occured while processing this buffer.
-* Finish it and try to get a new buffer to process.
-
-A RF.C
-
-71
-* Return if there are no buffers in the queues.
-* This loops until the queues are empty or a new
-* action was successfully scheduled.
-*/
-rfc_sc->sc_curbuf->b_resid = rfc_sc->sc_bytesleft;
-rfc_sc->sc_curbuf->b_error = EIO;
-biodone(rfc_sc->sc_curbuf);
-rf_sc = get_new_buf( rfc_sc);
-if (rf_sc == NULL)
-return;
-continue;
-}
-/*
-* ... then initiate next command.
-*/
-switch (rf_sc->sc_state & RFS_CMDS) {
-case RFS_EBUF: /* Empty Buffer */
-i = bus_dmamap_load(rfc_sc->sc_dmat, rfc_sc->sc_dmam,
-rfc_sc->sc_bufidx, (rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD,
-rfc_sc->sc_curbuf->b_proc, BUS_DMA_NOWAIT);
-if (i != 0) {
-printf("rfc_intr: Error loading dmamap: %d\n",
-i);
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-break;
-}
-disk_busy(&rf_sc->sc_disk);
-if (rfc_sendcmd(rfc_sc, RX2CS_EBUF | RX2CS_IE
-| ((rf_sc->sc_state & RFS_DENS) == 0 ? 0 : RX2CS_DD)
-| (rf_sc->sc_dnum == 0 ? 0 : RX2CS_US)
-| ((rfc_sc->sc_dmam->dm_segs[0].ds_addr
-& 0x30000) >>4), ((rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD) / 2,
-rfc_sc->sc_dmam->dm_segs[0].ds_addr & 0xffff) < 0) {
-disk_unbusy(&rf_sc->sc_disk, 0, 1);
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-bus_dmamap_unload(rfc_sc->sc_dmat,
-rfc_sc->sc_dmam);
-
-A RF.C
-
-72
-}
-break;
-case RFS_FBUF: /* Fill Buffer */
-i = bus_dmamap_load(rfc_sc->sc_dmat, rfc_sc->sc_dmam,
-rfc_sc->sc_bufidx, (rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD,
-rfc_sc->sc_curbuf->b_proc, BUS_DMA_NOWAIT);
-if (i != 0) {
-printf("rfc_intr: Error loading dmamap: %d\n",
-i);
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-break;
-}
-disk_busy(&rf_sc->sc_disk);
-if (rfc_sendcmd(rfc_sc, RX2CS_FBUF | RX2CS_IE
-| ((rf_sc->sc_state & RFS_DENS) == 0 ? 0 : RX2CS_DD)
-| (rf_sc->sc_dnum == 0 ? 0 : RX2CS_US)
-| ((rfc_sc->sc_dmam->dm_segs[0].ds_addr
-& 0x30000)>>4), ((rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD) / 2,
-rfc_sc->sc_dmam->dm_segs[0].ds_addr & 0xffff) < 0) {
-disk_unbusy(&rf_sc->sc_disk, 0, 0);
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-bus_dmamap_unload(rfc_sc->sc_dmat,
-rfc_sc->sc_dmam);
-}
-break;
-case RFS_WSEC: /* Write Sector */
-i = (rfc_sc->sc_curbuf->b_bcount - rfc_sc->sc_bytesleft
-+ rfc_sc->sc_curbuf->b_blkno * DEV_BSIZE) /
-((rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD);
-if (i > RX2_TRACKS * RX2_SECTORS) {
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-break;
-}
-disk_busy(&rf_sc->sc_disk);
-if (rfc_sendcmd(rfc_sc, RX2CS_WSEC | RX2CS_IE
-| (rf_sc->sc_dnum == 0 ? 0 : RX2CS_US)
-| ((rf_sc->sc_state& RFS_DENS) == 0 ? 0 : RX2CS_DD),
-
-A RF.C
-
-73
-i % RX2_SECTORS + 1, i / RX2_SECTORS) < 0) {
-disk_unbusy(&rf_sc->sc_disk, 0, 0);
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-}
-break;
-case RFS_RSEC: /* Read Sector */
-i = (rfc_sc->sc_curbuf->b_bcount - rfc_sc->sc_bytesleft
-+ rfc_sc->sc_curbuf->b_blkno * DEV_BSIZE) /
-((rf_sc->sc_state & RFS_DENS) == 0
-? RX2_BYTE_SD : RX2_BYTE_DD);
-if (i > RX2_TRACKS * RX2_SECTORS) {
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-break;
-}
-disk_busy(&rf_sc->sc_disk);
-if (rfc_sendcmd(rfc_sc, RX2CS_RSEC | RX2CS_IE
-| (rf_sc->sc_dnum == 0 ? 0 : RX2CS_US)
-| ((rf_sc->sc_state& RFS_DENS) == 0 ? 0 : RX2CS_DD),
-i % RX2_SECTORS + 1, i / RX2_SECTORS) < 0) {
-disk_unbusy(&rf_sc->sc_disk, 0, 1);
-rfc_sc->sc_curbuf->b_flags |= B_ERROR;
-}
-break;
-case RFS_NOTINIT: /* Device is not open */
-case RFS_PROBING: /* density detect / verify started */
-case RFS_IDLE: /* controller is idle */
-case RFS_SMD:
-/* Set Media Density */
-case RFS_RSTAT: /* Read Status */
-case RFS_WDDS: /* Write Deleted Data Sector */
-case RFS_REC:
-/* Read Error Code */
-default:
-panic("Impossible state in rfc_intr(2).\n");
-}
-if ((rfc_sc->sc_curbuf->b_flags & B_ERROR) != 0) {
-/*
-* An error occured while processing this buffer.
-* Finish it and try to get a new buffer to process.
-* Return if there are no buffers in the queues.
-* This loops until the queues are empty or a new
-
-A RF.C
-
-74
-* action was successfully scheduled.
-*/
-rfc_sc->sc_curbuf->b_resid = rfc_sc->sc_bytesleft;
-rfc_sc->sc_curbuf->b_error = EIO;
-biodone(rfc_sc->sc_curbuf);
-rf_sc = get_new_buf( rfc_sc);
-if (rf_sc == NULL)
-return;
-continue;
-
-}
-} while ( 1 == 0 /* CONSTCOND */ );
-return;
-}
-
-int
-rfdump(dev_t dev, daddr_t blkno, caddr_t va, size_t size)
-{
-/* A 0.5MB floppy is much to small to take a system dump... */
-return(ENXIO);
-}
-
-int
-rfsize(dev_t dev)
-{
-return(-1);
-}
-
-int
-rfopen(dev_t dev, int oflags, int devtype, struct proc *p)
-{
-struct rf_softc *rf_sc;
-struct rfc_softc *rfc_sc;
-
-A RF.C
-
-75
-
-struct disklabel *dl;
-int unit;
-unit = DISKUNIT(dev);
-if (unit >= rf_cd.cd_ndevs || (rf_sc = rf_cd.cd_devs[unit]) == NULL) {
-return(ENXIO);
-}
-rfc_sc = (struct rfc_softc *)rf_sc->sc_dev.dv_parent;
-dl = rf_sc->sc_disk.dk_label;
-switch (DISKPART(dev)) {
-case 0:
-/* Part. a is single density. */
-/* opening in single and double density is sensless */
-if ((rf_sc->sc_state & RFS_OPEN_B) != 0 )
-return(ENXIO);
-rf_sc->sc_state &= ˜RFS_DENS;
-rf_sc->sc_state &= ˜RFS_AD;
-rf_sc->sc_state |= RFS_OPEN_A;
-break;
-case 1:
-/* Part. b is double density. */
-/*
-* Opening a singe density only drive in double
-* density or simultaneous opening in single and
-* double density is sensless.
-*/
-if (rfc_sc->type == 1
-|| (rf_sc->sc_state & RFS_OPEN_A) != 0 )
-return(ENXIO);
-rf_sc->sc_state |= RFS_DENS;
-rf_sc->sc_state &= ˜RFS_AD;
-rf_sc->sc_state |= RFS_OPEN_B;
-break;
-case 2:
-/* Part. c is auto density. */
-rf_sc->sc_state |= RFS_AD;
-rf_sc->sc_state |= RFS_OPEN_C;
-break;
-default:
-return(ENXIO);
-break;
-}
-if ((rf_sc->sc_state & RFS_CMDS) == RFS_NOTINIT) {
-
-A RF.C
-
-76
-rfc_sc->sc_curchild = rf_sc->sc_dnum;
-/*
-* Controller is idle and density is not detected.
-* Start a density probe by issuing a read sector command
-* and sleep until the density probe finished.
-* Due to this it is impossible to open unformated media.
-* As the RX02/02 is not able to format its own media,
-* media must be purchased preformated. fsck DEC marketing!
-*/
-RFS_SETCMD(rf_sc->sc_state, RFS_PROBING);
-disk_busy(&rf_sc->sc_disk);
-if (rfc_sendcmd(rfc_sc, RX2CS_RSEC | RX2CS_IE
-| (rf_sc->sc_dnum == 0 ? 0 : RX2CS_US)
-| ((rf_sc->sc_state & RFS_DENS) == 0 ? 0 : RX2CS_DD),
-1, 1) < 0) {
-rf_sc->sc_state = 0;
-return(ENXIO);
-}
-/* wait max. 2 sec for density probe to finish */
-if (tsleep(rf_sc, PRIBIO | PCATCH, "density probe", 2 * hz)
-!= 0 || (rf_sc->sc_state & RFS_CMDS) == RFS_NOTINIT) {
-/* timeout elapsed and / or somthing went wrong */
-rf_sc->sc_state = 0;
-return(ENXIO);
-}
-
-}
-/* disklabel. We use different fake geometries for SD and DD. */
-if ((rf_sc->sc_state & RFS_DENS) == 0) {
-dl->d_nsectors = 10;
-/* sectors per track */
-dl->d_secpercyl = 10;
-/* sectors per cylinder */
-dl->d_ncylinders = 50;
-/* cylinders per unit */
-dl->d_secperunit = 501; /* sectors per unit */
-/* number of sectors in partition */
-dl->d_partitions[2].p_size = 500;
-} else {
-dl->d_nsectors = RX2_SECTORS / 2; /* sectors per track */
-dl->d_secpercyl = RX2_SECTORS / 2; /* sectors per cylinder */
-dl->d_ncylinders = RX2_TRACKS;
-/* cylinders per unit */
-/* sectors per unit */
-dl->d_secperunit = RX2_SECTORS * RX2_TRACKS / 2;
-
-A RF.C
-
-77
-/* number of sectors in partition */
-dl->d_partitions[2].p_size = RX2_SECTORS * RX2_TRACKS / 2;
-
-}
-return(0);
-}
-
-int
-rfclose(dev_t dev, int fflag, int devtype, struct proc *p)
-{
-struct rf_softc *rf_sc;
-int unit;
-unit = DISKUNIT(dev);
-if (unit >= rf_cd.cd_ndevs || (rf_sc = rf_cd.cd_devs[unit]) == NULL) {
-return(ENXIO);
-}
-if ((rf_sc->sc_state & 1 << (DISKPART(dev) + RFS_OPEN_SHIFT)) == 0)
-panic("rfclose: can not close on non-open drive %s "
-"partition %d", rf_sc->sc_dev.dv_xname, DISKPART(dev));
-else
-rf_sc->sc_state &= ˜(1 << (DISKPART(dev) + RFS_OPEN_SHIFT));
-if ((rf_sc->sc_state & RFS_OPEN_MASK) == 0)
-rf_sc->sc_state = 0;
-return(0);
-}
-
-int
-rfread(dev_t dev, struct uio *uio, int ioflag)
-{
-return(physio(rfstrategy, NULL, dev, B_READ, minphys, uio));
-}
-
-int
-
-A RF.C
-
-78
-
-rfwrite(dev_t dev, struct uio *uio, int ioflag)
-{
-return(physio(rfstrategy, NULL, dev, B_WRITE, minphys, uio));
-}
-
-int
-rfioctl(dev_t dev, u_long cmd, caddr_t data, int fflag, struct proc *p)
-{
-struct rf_softc *rf_sc;
-int unit;
-unit = DISKUNIT(dev);
-if (unit >= rf_cd.cd_ndevs || (rf_sc = rf_cd.cd_devs[unit]) == NULL) {
-return(ENXIO);
-}
-/* We are going to operate on a non open dev? PANIC! */
-if ((rf_sc->sc_state & 1 << (DISKPART(dev) + RFS_OPEN_SHIFT)) == 0)
-panic("rfioctl: can not operate on non-open drive %s "
-"partition %d", rf_sc->sc_dev.dv_xname, DISKPART(dev));
-switch (cmd) {
-/* get and set disklabel; DIOCGPART used internally */
-case DIOCGDINFO: /* get */
-memcpy(data, rf_sc->sc_disk.dk_label,
-sizeof(struct disklabel));
-return(0);
-case DIOCSDINFO: /* set */
-return(0);
-case DIOCWDINFO: /* set, update disk */
-return(0);
-case DIOCGPART: /* get partition */
-((struct partinfo *)data)->disklab = rf_sc->sc_disk.dk_label;
-((struct partinfo *)data)->part =
-&rf_sc->sc_disk.dk_label->d_partitions[DISKPART(dev)];
-return(0);
-/* do format operation, read or write */
-case DIOCRFORMAT:
-
-A RF.C
-break;
-case DIOCWFORMAT:
-break;
-case DIOCSSTEP: /* set step rate */
-break;
-case DIOCSRETRIES: /* set # of retries */
-break;
-case DIOCKLABEL: /* keep/drop label on close? */
-break;
-case DIOCWLABEL: /* write en/disable label */
-break;
-/*
-
-case DIOCSBAD: / * set kernel dkbad */
-break; /* */
-case DIOCEJECT: /* eject removable disk */
-break;
-case ODIOCEJECT: /* eject removable disk */
-break;
-case DIOCLOCK: /* lock/unlock pack */
-break;
-/* get default label, clear label */
-case DIOCGDEFLABEL:
-break;
-case DIOCCLRLABEL:
-break;
-default:
-return(ENOTTY);
-}
-return(ENOTTY);
-
-}
-
-79
-
-B RFREG.H
-
-80
-
-B rfreg.h
-/*
-* Copyright (c) 2002 Jochen Kunz.
-* All rights reserved.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions
-* are met:
-* 1. Redistributions of source code must retain the above copyright
-*
-notice, this list of conditions and the following disclaimer.
-* 2. Redistributions in binary form must reproduce the above copyright
-*
-notice, this list of conditions and the following disclaimer in the
-*
-documentation and/or other materials provided with the distribution.
-* 3. The name of Jochen Kunz may not be used to endorse or promote
-*
-products derived from this software without specific prior
-*
-written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY JOCHEN KUNZ
-* ''AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-* TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-* PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL JOCHEN KUNZ
-* BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-* CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-* SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-* INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-* CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-* ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-* POSSIBILITY OF SUCH DAMAGE.
-*/
-
-/* Registers in Uni/QBus IO space. */
-#define RX2CS
-0
-/* Command and Status Register */
-#define RX2DB
-2
-/* Data Buffer Register */
-/* RX2DB is depending on context: */
-#define RX2BA
-2
-/* Bus Address Register */
-#define RX2TA
-2
-/* Track Address Register */
-#define RX2SA
-2
-/* Sector Address Register */
-
-B RFREG.H
-#define RX2WC
-#define RX2ES
-
-81
-2
-2
-
-/* Word Count Register */
-/* Error and Status Register */
-
-/* Bitdefinitions of CSR. */
-#define RX2CS_ERR
-0x8000
-#define RX2CS_INIT
-0x4000
-#define RX2CS_UAEBH
-0x2000
-#define RX2CS_UAEBI
-0x1000
-#define RX2CS_RX02
-0x0800
-/*
-0x0400
-/*
-0x0200
-#define RX2CS_DD
-0x0100
-#define RX2CS_TR
-0x0080
-#define RX2CS_IE
-0x0040
-#define RX2CS_DONE
-0x0020
-#define RX2CS_US
-0x0010
-#define RX2CS_FCH
-0x0008
-#define RX2CS_FCM
-0x0004
-#define RX2CS_FCL
-0x0002
-#define RX2CS_GO
-0x0001
-#define RX2CS_NU
-0x0600
-
-#define RX2CS_UAEB
-#define RX2CS_FC
-
-/*
-/*
-/*
-/*
-/*
-
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-/*
-
-Error
-Initialize
-Unibus address extension high bit
-Unibus address extension low bit
-RX02
-Not Used
-Not Used
-Double Density
-Transfer Request
-Interrupt Enable
-Done
-Unit Select
-Function Code high bit
-Function Code mid bit
-Function Code low bit
-Go
-not used bits
-
-RO */
-WO */
-WO */
-WO */
-RO */
--- */
--- */
-R/W */
-RO */
-R/W */
-RO */
-WO */
-WO */
-WO */
-WO */
-WO */
--- */
-
-( RX2CS_UAEBH | RX2CS_UAEBI )
-( RX2CS_FCH | RX2CS_FCM | RX2CS_FCL )
-
-/* Commands of the controller and parameter cont. */
-#define RX2CS_FBUF
-001
-/* Fill Buffer, word count and bus address */
-#define RX2CS_EBUF
-003
-/* Empty Buffer, word count and bus address */
-#define RX2CS_WSEC
-005
-/* Write Sector, sector and track */
-#define RX2CS_RSEC
-007
-/* Read Sector, sector and track */
-#define RX2CS_SMD
-011
-/* Set Media Density, ??? */
-#define RX2CS_RSTAT
-013
-/* Read Status, no params */
-#define RX2CS_WDDS
-015
-/* Write Deleted Data Sector, sector and track */
-#define RX2CS_REC
-017
-/* Read Error Code, bus address */
-
-/* Track Address Register */
-
-B RFREG.H
-#define RX2TA_MASK
-
-82
-0x7f
-
-/* Sector Address Register */
-#define RX2SA_MASK
-0x1f
-
-/* Word Count Register */
-#define RX2WC_MASK
-0x7f
-
-/* Bitdefinitions of RX2ES. */
-/*
-<15-12>
-#define RX2ES_NEM
-0x0800
-#define RX2ES_WCO
-0x0400
-/*
-0x0200
-#define RX2ES_US
-0x0010
-#define RX2ES_RDY
-0x0080
-#define RX2ES_DEL
-0x0040
-#define RX2ES_DD
-0x0020
-#define RX2ES_DE
-0x0010
-#define RX2ES_ACL
-0x0008
-#define RX2ES_ID
-0x0004
-/*
-0x0002
-#define RX2ES_CRCE
-0x0001
-#define RX2ES_NU
-0xF202
-
-Not Used
-/* Non-Existend Memory
-/* Word Count Overflow
-Not Used
-/* Unit Select
-/* Ready
-/* Deleted Data
-/* Double Density
-/* Density Error
-/* AC Lost
-/* Initialize Done
-Not Used
-/* CRC Error
-/* not used bits
-
-#define
-#define
-#define
-#define
-#define
-
-/*
-/*
-/*
-/*
-/*
-
-RX2_TRACKS
-RX2_SECTORS
-RX2_BYTE_SD
-RX2_BYTE_DD
-RX2_HEADS
-
-77
-26
-128
-256
-1
-
-number
-number
-number
-number
-number
-
-of
-of
-of
-of
-of
-
--RO
-RO
-RO
-RO
-RO
-RO
-RO
-RO
-RO
-RO
--RO
---
-
-*/
-*/
-*/
-*/
-*/
-*/
-*/
-*/
-*/
-*/
-*/
-*/
-*/
-*/
-
-tracks */
-sectors / track */
-bytes / sector in single density */
-bytes / sector in double density */
-heads */
-
-C LICENSE
-
-83
-
-C License
-Copyright c 2003 Jochen Kunz
+        struct rf_softc *rf_sc;
+        int unit;
+
+        unit = DISKUNIT(dev);
+        if (unit >= rf_cd.cd_ndevs || (rf_sc = rf_cd.cd_devs[unit]) == NULL) {
+                return(ENXIO);
+        }
+        /* We are going to operate on a non open dev? PANIC! */
+        if (rf_sc->sc_open == 0) {
+                panic("rfstrategy: can not operate on non-open drive %s (2)",
+                    rf_sc->sc_dev.dv_xname);
+        }
+        switch (cmd) {
+        /* get and set disklabel; DIOCGPART used internally */
+        case DIOCGDINFO: /* get */
+                memcpy(data, rf_sc->sc_disk.dk_label,
+                    sizeof(struct disklabel));
+                return(0);
+        case DIOCSDINFO: /* set */
+                return(0);
+        case DIOCWDINFO: /* set, update disk */
+                return(0);
+        case DIOCGPART:  /* get partition */
+                ((struct partinfo *)data)->disklab = rf_sc->sc_disk.dk_label;
+                ((struct partinfo *)data)->part =
+                    &rf_sc->sc_disk.dk_label->d_partitions[DISKPART(dev)];
+                return(0);
+
+        /* do format operation, read or write */
+        case DIOCRFORMAT:
+        break;
+        case DIOCWFORMAT:
+        break;
+
+        case DIOCSSTEP: /* set step rate */
+        break;
+        case DIOCSRETRIES: /* set # of retries */
+        break;
+        case DIOCKLABEL: /* keep/drop label on close? */
+        break;
+        case DIOCWLABEL: /* write en/disable label */
+        break;
+
+/*      case DIOCSBAD: / * set kernel dkbad */
+        break; /* */
+        case DIOCEJECT: /* eject removable disk */
+        break;
+        case ODIOCEJECT: /* eject removable disk */
+        break;
+        case DIOCLOCK: /* lock/unlock pack */
+        break;
+
+        /* get default label, clear label */
+        case DIOCGDEFLABEL:
+        break;
+        case DIOCCLRLABEL:
+        break;
+        default:
+                return(ENOTTY);
+        }
+
+        return(ENOTTY);
+}
+```
+
+## rf.c
+## rfreg.h
+## License
+Copyright (c) 2003 Jochen Kunz
 All rights reserved.
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions
 are met:
+
 1. Redistributions of source code must retain the above copyright
 notice, this list of conditions and the following disclaimer.
 2. Redistributions in binary form must reproduce the above
@@ -3479,6 +1789,7 @@ with the distribution.
 3. The name of Jochen Kunz may not be used to endorse or promote
 products derived from this software without specific prior
 written permission.
+
 THIS SOFTWARE IS PROVIDED BY JOCHEN KUNZ ''AS IS'' AND ANY EXPRESS
 OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -3491,184 +1802,24 @@ WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-D VERSION HISTORY
-
-D Version History
+## Version History
 1.0 First publication.
 1.0.1 Correction of various typographical errors.
 1.0.1e Initial translation into English by Jan Schaumann
 
-84
-
-E BIBLIOGRAPHY
-
-85
-
-E Bibliography
-References
+## Bibliography
+### References
 [McK 99]
-
 Twenty Years of Berkeley Unix
 From AT&T-Owned to Freely Redistributable
 http://www.oreilly.com/catalog/opensources/book/kirkmck.html
 
 [Tho]
-
 A Machine-Independent DMA Framework for NetBSD
 Jason Thorpe
 http://www.netbsd.org/Documentation/kernel/bus dma.ps
 
 [Li 77]
-
 A Commentary on the Sixth Edition UNIX Operating System
 J. Lions, Department of Computer Science, The University of New South
 Wales
-
-Index
-config attach(), 10
-config found(), 10, 11, 23–25
-config search(), 10, 25
-func Funktionsparameter, 10
-Copyright, 14
-
-adjustkernel, 6
-Attach-struct, 13
-attach args, 18, 21, 25
-Attribute, 9
-interface, 9
-plain, 9
-attributes, 8
-autoconf, 6
-autoconfig(9), 24
-
-D DISK, 17
-D TAPE, 17
-D TTY, 17
-device-major, 16
-devicenode, 15
-Devicenumber
-Major-, 15, 30
-Minor-, 15
-devicenumber, 32
-devsw.c, 16
-direct configuration, 10, 11
-disk attach(9), 26
-disk busy(9), 44
-disk unbusy(9), 47
-Disklabel, 26
-disklabel(5,9), 35, 48
-DISKUNIT(), 32
-drivercore, 8
-
-bdevsw, 16
-biodone(9), 38, 48
-BSD license, 14
-Buffer, 36, 37
-buffer, 30, 43
-Buffercache, 36
-Bufferqueue, 37, 41
-bufferqueue, 31, 40, 43
-BUFQ PUT(), 39
-Bus-Attachment, 12
-bus dma(9), 12, 46
-Handle, 8, 12
-Tag, 12
-bus space(9), 12, 18
-Handle, 8, 12, 18
-Tag, 12
-bus space read 2(9), 19
-bus space write 2(9), 19
-busdriver, 8
-busscan, 8
-
-files.* files, 6
-files.uba, 9, 14
-foo attach(), 11
-foo match(), 10, 20
-get new buf(), 30, 42
-
-cdevsw, 16
-cf loc, 24, 25
-CFATTACH DECL, 17
-cfdata, 6–8, 10, 24, 25
-cfdriver, 32
-compilation-directory, 6
-config(8), 6, 7, 24
-
-indirect configuration, 10
-interface attribute, 24
-Interrupt
--context, 40
--handler, 21, 30, 31, 34, 37
--level, 20
-
-86
-
-INDEX
--vektor, 20
-interrupt, 20, 40
-Interruptcontext, 39
-ioconf.c, 6–8
-kernel configuration file, 14, 24, 25, 32
-kernelconfigurationfile, 6
-Kernelcontext, 39
-Locator, 9
-Wildcard, 10, 25
-locator, 24
-majors.vax, 16
-needs-flag, 15
-param.c, 6
-physio(9), 36
-print function, 11
-rf.c, 15
-rf.h, 15
-rf attach(), 25
-rf match(), 24
-rf softc, 29
-rfc attach(), 21
-rfc attach args, 18
-rfc intr(), 30, 39, 41, 43
-rfc match(), 18
-rfc sendcmd(), 30
-rfc softc, 27
-RFCCF DRIVE, 24
-RFCCF DRIVE DEFAULT, 24
-rfclose(), 17, 29, 35
-rfcprobedens(), 30
-rfdump(), 29, 31
-rfioctl(), 17, 29, 48
-rfopen(), 17, 29–31, 34
-rfread(), 17, 29, 36
-rfsize(), 29, 31
-rfstrategy(), 17, 29, 30, 36, 37, 40
-
-87
-rfwrite(), 17, 29, 36
-sc bufidx, 27
-sc bufq, 29
-sc bytesleft, 28
-sc childs, 27
-sc curchild, 28, 43
-sc dev, 27, 29
-sc disk, 29
-sc dmah, 27
-sc dmat, 27
-sc dnum, 29
-sc intr count, 27
-sc ioh, 27
-sc iot, 27
-sc state, 29, 44
-softc, 11, 21, 26, 27, 29, 32, 36
-splbio(9), 40
-splx(9), 40
-submatch(), 11
-subr autoconf.c, 8, 12
-tsleep(9), 34
-type, 28
-uio, 36
-UNCONF, 12
-UNSUPP, 12
-Usercontext, 39
-wakeup(9), 34
-
-
