@@ -1804,7 +1804,9 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Version History
 1.0 First publication.
+
 1.0.1 Correction of various typographical errors.
+
 1.0.1e Initial translation into English by Jan Schaumann
 
 ## Bibliography
