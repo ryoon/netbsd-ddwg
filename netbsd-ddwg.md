@@ -104,31 +104,31 @@ The kernel configuration file is based on three pillars: `ioconf.c / cfdata` and
 `sys/kern/subr_autoconf.c`. This concept has become known *as autoconf*.
 But what exactly is going on behind the curtain?
 
-### config(8)
+### `config(8)`
 There is one central file which declares the kernel configuration for a BSD Unix
-Kernel. Under NetBSD, this file is located in sys/arch/<arch>/conf. <arch>
+Kernel. Under NetBSD, this file is located in `sys/arch/<arch>/conf`. `<arch>`
 represents the appropriate machine- / processor architecture. In our example, this
-is vax, i.e. d.h. sys/arch/vax/conf. In this folder, you can find the kernel configuration file GENERIC, which contains all the drivers and options supported by
+is `vax`, i.e. d.h. `sys/arch/vax/conf`. In this folder, you can find the kernel configuration file GENERIC, which contains all the drivers and options supported by
 this architecture. You can create a user-defined configuration file by copying the
 file to a new name in this directory and editing it. Usually, this means commenting
 out all the drivers for devices not available in the particular machine. This process
-can be automated by using the tool pkgsrc/sysutils/adjustkernel.
+can be automated by using the tool `pkgsrc/sysutils/adjustkernel`.
 
-After calling config(8), it reads the kernel configuration file to determine
-which drivers / functionality should be included in the kernel. Some "'files.*"'
-files assign the .c- and .h-files to the various drivers and functionality. Using these dependencies, config(8) creates a compilation directory containing
-a Makefile as well as a range of .c- and .h-files. The .h-files usually contain
-defines with parameters such as the max. number of driver instances (for example PseudoTTYs, BPF, ...), kernel options such as KTRACE, ... The file param.c
+After calling `config(8)`, it reads the kernel configuration file to determine
+which drivers / functionality should be included in the kernel. Some "'`files.*`"'
+files assign the `.c-` and `.h-`files to the various drivers and functionality. Using these dependencies, `config(8)` creates a compilation directory containing
+a Makefile as well as a range of `.c-` and `.h-`files. The `.h-`files usually contain
+`define`s with parameters such as the max. number of driver instances (for example PseudoTTYs, BPF, ...), kernel options such as `KTRACE`, ... The file `param.c`
 also falls into this category.
 
 The compilation directory is named after the kernel configuration file and is
-located in sys/arch/vax/compile. After changing into said directory, the actual
-compilation is started by the command make depend netbsd. See config(8)
+located in `sys/arch/vax/compile`. After changing into said directory, the actual
+compilation is started by the command `make depend netbsd`. See `config(8)`
 and http://www.netbsd.org/Documentation/kernel/ for details.
 
-### ioconf.c and cfdata
-The file ioconf.c in the compilation directory contains the data structure,
-marking the central point of access of the entire autoconf process. This
+### `ioconf.c` and `cfdata`
+The file `ioconf.c` in the compilation directory contains the data structure,
+marking the central point of access of the entire *autoconf* process. This
 configuration data table shows all the devices supported by the kernel. Let's
 start with an excerpt of the kernels configuration file:
 
@@ -161,14 +161,14 @@ st*       at scsibus? target? lun?
 cd*       at scsibus? target? lun?
 ```
 
-We quickly realize that the organization of the device drivers can be represented in a treelike structure as in figure 1. Attached to the imaginary root
-(which appears "out of nowhere") we find the first child, the abstract mainbus.
-This mainbus is parent to the children ibus, sbi and vsbus. These children in
-turn are parent to uba, le, asc, ... These relationships represent the above mentioned cfdata table found in the file ioconf.c. The programmer does not need
-to know or care about this table, as it is automagically created by config(8) .
+We quickly realize that the organization of the device drivers can be represented in a *treelike structure* as in figure 1. Attached to the imaginary `root`
+(which appears "out of nowhere") we find the first child, the abstract `mainbus`.
+This `mainbus` is parent to the children `ibus`, `sbi` and `vsbus`. These children in
+turn are parent to `uba`, `le`, `asc`, ... These relationships represent the above mentioned `cfdata` table found in the file `ioconf.c`. The programmer does not need
+to know or care about this table, as it is automagically created by `config(8)`.
 
 
-It is important to realize that each device (node) has a parent (except for root,
+It is important to realize that each device (node) has a parent (except for `root`,
 due to the old chicken-or-the-egg problem). A node that has children, is a Bus or
 a controller. The actual devices are the leaves of the tree. Each leaf and each node
 represent a device driver. That of course means, that there must be drivers for the
@@ -178,18 +178,18 @@ for locating the devices attached to the bus (i.e. the "busscan").
 Figure 1: device tree
 
 Another important realization lies in the fact that there are several different
-ways of arriving at the same driver! For example le0: root => mainbus0
-=> ibus0 => le0 or root => mainbus0 => vsbus0 => le0. le is the actual
+ways of arriving at the same driver! For example `le0: root => mainbus0
+=> ibus0 => le0 or root => mainbus0 => vsbus0 => le0`. `le` is the actual
 driver for the LANCE Ethernet Chip. Since the core of the driver accesses the
-hardware only through abstract,bus-independent functions, the special details of
+hardware only through *abstract,bus-independent* functions, the special details of
 the hardware are hidden from it. Instead of manipulating the hardware directly,
 the driver utilizes abstract handles. These handles and the according functions are
 provided by the parent (i.e. the driver of the bussystem). Of course, all possible
-parents (vsbus and ibus in this case) for a given child (le, in this case) need to
+parents (`vsbus` and `ibus` in this case) for a given child (`le`, in this case) need to
 provide the same interfaces (Things get even more entertaining when we account for other architectures. le may also be
 attached to tc, pci, zbus, vme, dio, mainbus, sbus, ... .). These interfaces and the dependencies among the
 drivers and the other kernel subsystems are described in more detail via so-called
-attributes further down.
+*attributes* further down.
 
 ### sys/kern/subr autoconf.c
 The functions found in sys/kern/subr autoconf.c walk down the cfdata table in ioconf.c on boot and descend down the entire device tree. For this to work
