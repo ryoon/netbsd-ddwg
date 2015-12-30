@@ -6,7 +6,7 @@ Version 1.0.1e
 
 August 25th, 2003
 
-An introduction into NetBSD's autoconfi(9) system and the basics of device drivers under NetBSD.
+An introduction into NetBSD's `autoconfi(9)` system and the basics of device drivers under NetBSD.
 
 ## Contents
 
