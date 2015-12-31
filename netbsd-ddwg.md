@@ -491,9 +491,9 @@ dev_type_size(rfsize);
 
 ### Data structures for `autoconf(9)`
 As mentioned in `driver(9)`, the kernel uses a static `struct`, through which the
-functions necessary for autoconf(9) are included. Since NetBSD 2.0-current,
-this declaration is done through a macro CFATTACH DECL. Since the rf(4) driver
-doesn't need the "detach" and "activate" functions, you simply pass NULL-pointers
+functions necessary for `autoconf(9)` are included. Since NetBSD 2.0-current,
+this declaration is done through a macro `CFATTACH DECL`. Since the `rf(4)` driver
+doesn't need the "detach" and "activate" functions, you simply pass `NULL`-pointers
 in their place.
 
 ```
@@ -518,9 +518,9 @@ CFATTACH_DECL(
 );
 ```
 
-And finally the struct, through which the rfc parent tells its rf child at
-autoconfig(9) time its actual found "bus address". More on this under section
-3.3.3, when we talk about rf match.
+And finally the `struct`, through which the `rfc` parent tells its `rf` child at
+`autoconf(9)` time its actual found "bus address". More on this under section
+3.3.3, when we talk about `rf_match`.
 
 ```
 struct rfc_attach_args {    /* controller type, 1 or 2 */
@@ -530,21 +530,21 @@ struct rfc_attach_args {    /* controller type, 1 or 2 */
 };
 ```
 
-### Functions for autoconf(9)
-#### rfc match()
-A parent device hands down a bus- or controller specific attach args data structure to its child devices in the void *aux parameter. These data inform the child
+### Functions for `autoconf(9)`
+#### `rfc_match()`
+A parent device hands down a bus- or controller specific `attach_args` data structure to its child devices in the `void *aux` parameter. These data inform the child
 device driver "where" on the bus it should look for a device. In extensible busses
-such as the QBus, this data structure also contains the bus space(9) handles.
+such as the QBus, this data structure also contains the `bus_space(9)` handles.
 The driver can access the hardware only by means of these handles through the
-bus space(9) functions / macros. That is why one of the first actions in one of
-the "match" or "attache" routines is a typecast of the void *aux parameter to the
-appropriate attach args data structure.
+`bus_space(9)` functions / macros. That is why one of the first actions in one of
+the "match" or "attache" routines is a typecast of the `void *aux` parameter to the
+appropriate `attach_args` data structure.
 
 In order to communicate with the controller, it maps a two byte wide "registers" (the so-called command and status registers) into the address space of the
 bus (Remember the name of the locator for the UniBus / QBus from the kernels configuration file?
 It's "csr".).
-. As the name suggests, it is possible to send a specific command to the controller by sending a certain combination of bits via bus space write 2(9) or to
-query its status via bus space read 2(9). Depending on the command, multiple
+. As the name suggests, it is possible to send a specific command to the controller by sending a certain combination of bits via `bus_space_write_2(9)` or to
+query its status via `bus_space_read_2(9)`. Depending on the command, multiple
 writes may be necessary to provide all parameters such as sector number, etc.
 
 ```
@@ -605,26 +605,25 @@ rfc_match(struct device *parent, struct cfdata *match, void *aux)
 }
 ```
 
-
 First we send a reset to the controller and wait up to two seconds if it acknowledges the command. Should the controller end the reset properly, a second
 command with an interrupt enable bit is sent. Why are we using an interrupt, if
-driver(9) states that the entire autoconfig(9) procedure takes place when no
+`driver(9)` states that the entire `autoconf(9)` procedure takes place when no
 interrupts have been enabled yet? Well, this only means that a driver can not yet
 use any interrupts, since the interrupt handling of the kernel has not yet been initialized. A device can, however, cause an interrupt nonetheless, it will just remain
 in the depth of the hard-/software. The interrupt gets lost, the interrupt handler is
 not called. We'll cover interrupts in more details lateron.
 
 In this case, this is actually necessary. A driver for a QBus device has to
-cause an interrupt in its foo match() function. This interrupt is caught by
+cause an interrupt in its `foo_match()` function. This interrupt is caught by
 the QBus bus driver and is the only possibility for it to determine the interrupt level and -vector of the device. Therefore, the QBus bus driver does give
-an error message at boot time, if a foo match() function indicates the presence of a device but no interrupt has taken place. (All of this is handled in the
-function sys/dev/qbus/uba.c:ubasearch(), which is the func parameter of
-config search in the QBus bus driver. See 2.5.)
+an error message at boot time, if a `foo_match()` function indicates the presence of a device but no interrupt has taken place. (All of this is handled in the
+function `sys/dev/qbus/uba.c:ubasearch()`, which is the `func` parameter of
+`config_search` in the QBus bus driver. See 2.5.)
 
-#### rfc attach()
-The attach args data structure is valid only temporarily at autoconfig(9)
+#### `rfc_attach()`
+The `attach_args` data structure is valid only temporarily at `autoconf(9)`
 time. Therefore, the driver lateron copies the required information from
-attach args data structure into its softc data structure (more on this in the next
+`attach_args` data structure into its `softc` data structure (more on this in the next
 chapter) and initializes the variables only lateron. Part of this is also the reservation of the appropriate resources such as the "DMA map" and to detach the
 interrupt handler. What and how exactly all this is done, does of course depend
 very much on the supported device and the bus-/controller to which it attaches.
@@ -696,33 +695,31 @@ if (i >= 20) {
 }
 ```
 
-Ok, the controller has been found. After our rfc match() function as announced the presence of a suitable device, the QBus driver will print a message
+Ok, the controller has been found. After our `rfc_match()` function as announced the presence of a suitable device, the QBus driver will print a message
 like
 ```
 rfc0 at uba0 csr 177170 vec 264 ipl 17
 ```
-without a trailing \n. That way, our rfc attach() is able to print more detailed
+without a trailing `\n`. That way, our `rfc_attach()` is able to print more detailed
 information regarding the device. And that's exactly what we'll do first: determine if the device in question is a RX01 or a RX02, save that piece of information
-in the softc structure and print an appropriate message.
+in the `softc` structure and print an appropriate message.
 
 ```
-/* Is ths a RX01 or a RX02? */
-if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS)
-
-      & RX2CS_RX02) != 0) {
-            rfc_sc->type = 2;
-            rfc_aa.type = 2;
-
-} else {
-            rfc_sc->type = 1;
-            rfc_aa.type = 1;
-}
-printf(": RX0%d\n", rfc_sc->type);
+        /* Is ths a RX01 or a RX02? */
+        if ((bus_space_read_2(rfc_sc->sc_iot, rfc_sc->sc_ioh, RX2CS)
+            & RX2CS_RX02) != 0) {
+                rfc_sc->type = 2;
+                rfc_aa.type = 2;
+        } else {
+                rfc_sc->type = 1;
+                rfc_aa.type = 1;
+        }
+        printf(": RX0%d\n", rfc_sc->type);
 ```
 
 The last task remaining is to look for the children, i.e. to determine if, where
 and how any floppy drives are attached. Those are then integrated into the device
-tree by means of config found().
+tree by means of `config_found()`.
 
 ```
 #ifndef RX02_PROBE
@@ -764,11 +761,11 @@ tree by means of config found().
 }
 ```
 
-#### rf match()
-Since the rfc driver supports direct configuration, is calls config found() (and
-through it rf match()) only if the device is without a doubt present. You may
+#### `rf_match()`
+Since the `rfc` driver supports direct configuration, is calls `config_found()` (and
+through it `rf_match()`) only if the device is without a doubt present. You may
 think to yourself: "No problem, the device is present. We can reduce the function
-rf match to a measly return( 1);", but you would be wrong.
+`rf_match` to a measly `return( 1);`", but you would be wrong.
 
 ```
 int
@@ -785,54 +782,53 @@ rf_match(struct device *parent, struct cfdata *match, void *aux) {
 }
 ```
 
-Why this check? Or rather, what is being checked? The match data structure of type cfdata describes the autoconfig(9) parameter for this driver from
-the kernels configuration file. The cf loc array of the cfdata data structure
+Why this check? Or rather, what is being checked? The `match` data structure of type cfdata describes the `autoconf(9)` parameter for this driver from
+the kernels configuration file. The `cf_loc` array of the `cfdata` data structure
 contains the value of the locators. The position of the locators in this array is
-given by config(8). In order to be able to access the value of a certain locator
-in this array, there are preprocessor constants which follow this naming convention: <ATTR>CF_<LOC>, with <ATTR> representing the name of the interface attribute to which the locator belongs, and <LOC> representing the desired locator.
-The rf driver attaches to the rfc interface attribute with the drive locator, i.e.
-RFCCF DRIVE. This way, the driver can directory access the values of the drive
+given by `config(8)`. In order to be able to access the value of a certain locator
+in this array, there are preprocessor constants which follow this naming convention: `<ATTR>CF_<LOC>`, with `<ATTR>` representing the name of the interface attribute to which the locator belongs, and `<LOC>` representing the desired locator.
+The `rf` driver attaches to the `rfc` interface attribute with the `drive` locator, i.e.
+`RFCCF DRIVE`. This way, the driver can directory access the values of the `drive`
 locator given in the kernel configuration file. For example, if it contains:
 ```
 rf0 at rfc0 drive 1
 ```
-then the value of match->cf_loc[RFCCF_DRIVE] is 1. If the kernel configuration file does not assign a value to the locator, a wildcard is used, so that the value
-os set to the standard value given in the file files.uba. This standard value is
-available as a preprocessor constant RFCCF DRIVE DEFAULT and in is our example
+then the value of `match->cf_loc[RFCCF_DRIVE]` is 1. If the kernel configuration file does not assign a value to the locator, a wildcard is used, so that the value
+os set to the standard value given in the file `files.uba`. This standard value is
+available as a preprocessor constant `RFCCF_DRIVE_DEFAULT` and in is our example
 -1. (See 3.1.2 and 2.4 for the reason.)
 
 Thus, the driver gets the value of the locators from two sides of the interface
 attribute to which it attaches, i.e. the position, adress, ID, ... under which it is
 known to its parent. The one side from which the driver receives the value of
-the locator is the cf loc array of the cfdata data structure. These values are the
+the locator is the `cf_loc` array of the `cfdata` data structure. These values are the
 same as the ones give in the kernels configuration file; they are statically given
-at compilation time. The other side is the attach args data structure passed to
-the rfmatch function as void *aux. That structure is passed from the parent to
+at compilation time. The other side is the `attach_args` data structure passed to
+the `rfmatch` function as `void *aux`. That structure is passed from the parent to
 the child when the kernel boots. It therefore contains the locator values, that are
 actually found in the hardware.
 
-In the above if conditional, the child is checking two conditions: first,
+In the above `if` conditional, the child is checking two conditions: first,
 whether or not a wildcard was given as the locator. If so, then the position, address, ID, ... under which it is known to the parent matches, it returns 1 and the
 child driver is attached. If the kernel configuration file did not contain a precise
-position, address, ID, ... for the child, it has to use the match function to check
+position, address, ID, ... for the child, it has to use the `match` function to check
 if the value of the configuration file is identical to the one actually found. If so,
 then all's peachy and the child driver is attached. If not, then the found hardware
-configuration does not match the kernel configuration an the child driver must not
-be attached. Therefore, the match function returns 0. This check is necessary to
+configuration does not `match` the kernel configuration an the child driver must not
+be attached. Therefore, the `match` function returns 0. This check is necessary to
 "nail down" certain locators in the kernels configuration file. For example:
 ```
 sd2 at scsibus1 target 6 lun 0
 ```
 
 Using this mechanism, it is possible to on the one hand use wildcards and
-at the same time to "nail down" certain instances of a driver to a specific position. That is another reason why config found() calls config search().
-config search() iterates over all children. That's the only way to find the
+at the same time to "nail down" certain instances of a driver to a specific position. That is another reason why `config_found()` calls `config_search()`.
+`config_search()` iterates over all children. That's the only way to find the
 "right" child, if no wildcards are used.
 
-#### rf attach()
+#### `rf_attach()`
 ```
-
-id
+void
 rf_attach(struct device *parent, struct device *self, void *aux)
 {
 
@@ -850,8 +846,8 @@ rf_attach(struct device *parent, struct device *self, void *aux)
             dl = rf_sc->sc_disk.dk_label;
 ```
 
-From an autoconf(9) view, this is nothing special aside from the initialization of the softc and other data structures. The first assignment shows how a
-child device can access the softc data structure of its parent. disk attach(9)
+From an `autoconf(9)` view, this is nothing special aside from the initialization of the `softc` and other data structures. The first assignment shows how a
+child device can access the `softc` data structure of its parent. `disk_attach(9)`
 and the following assignments initialize the disklabel.
 
 ## The core of the driver
@@ -878,27 +874,27 @@ struct rfc_softc {
 };
 ```
 
-sc_dev always has to be the first field of the softc data structure. This is required by autoconf(9).
+`**sc_dev**` always has to be the first field of the `softc` data structure. This is required by `autoconf(9)`.
 
-sc_childs contains pointers to the two possible child devices. (Each controller
+`**sc_childs**` contains pointers to the two possible child devices. (Each controller
 can manage two drives at most.)
 
-sc_intr_count The interrupt caller. Mainly used for statistical purposes and
+`**sc_intr_count**` The interrupt caller. Mainly used for statistical purposes and
 is not strictly necessary for the driver to function but should always be used.
 
-sc_iot, sc_ioh, sc_dmat, sc_dmah , , , are the bus_space(9) and
-bus_dma(9) tags and handles used by the driver to access the hardware.
+`**sc_iot, sc_ioh, sc_dmat, sc_dmah , , ,**` are the `bus_space(9)` and
+`bus_dma(9)` tags and handles used by the driver to access the hardware.
 
-sc_bufidx A buffer may be larger than a single sector, so a driver needs to
+`**sc_bufidx**` A buffer may be larger than a single sector, so a driver needs to
 remember at which point in the buffer it currently is.
 
-sc_curchild Contains the number of the child device, currently being worked
+`**sc_curchild**` Contains the number of the child device, currently being worked
 on by the controller.
 
-sc_bytesleft How many bytes are left in the buffer and have to be transferred
+`**sc_bytesleft**` How many bytes are left in the buffer and have to be transferred
 from / to the floppy.
 
-type 1 or 2, depending on if it's a RX01 or a RX02.
+`**type**` 1 or 2, depending on if it's a RX01 or a RX02.
 
 
 #### Data structure per drive
@@ -934,18 +930,18 @@ struct rf_softc {
 };
 ```
 
-sc_dev see above.
+`**sc_dev**` see above.
 
-sc_disk Each device of type disk needs to have this data structure in their data
+`**sc_disk**` Each device of type disk needs to have this data structure in their data
        structure. The kernel needs this to manage the disk drive.
 
-sc_bufq The buffer queue of the drive. More on this later.
+`**sc_bufq**` The buffer queue of the drive. More on this later.
 
-sc_state The driver uses this variable to remember the state of the drive in
+`**sc_state**` The driver uses this variable to remember the state of the drive in
        oder to in guarantee the proper sequence of initialized, initializing, idle,
        data transfer, writing sector, idle, ... Symbolic definitions accordingly.
 
-sc_dnum Is this the first or the second drive on this controller?
+`**sc_dnum**` Is this the first or the second drive on this controller?
 
 ### The necessary functions
 ```
@@ -973,10 +969,10 @@ int rfdump(dev_t dev, daddr_t blkno, caddr_t va, size_t size);
 int rfsize(dev_t dev);
 ```
 
-The open, close, read, write, ioctl functions directly relate to the
+The `open, close, read, write, ioctl` functions directly relate to the
 functions from user-space of the same name. That is, if you call for example
-open( "'/dev/rrf0c"', O RDONLY, 0); from a program, this will lread to a
-call of rfopen(). The rfstrategy, rfdump, rfsize functions are required by
+`open( "'/dev/rrf0c"', O RDONLY, 0);` from a program, this will lread to a
+call of `rfopen()`. The `rfstrategy, rfdump, rfsize` functions are required by
 some kernel internal functions.
 
 ```
@@ -987,7 +983,7 @@ static void rfc_intr(void *);
 
 These are some helper functions of the driver. The first is used to send a
 command to the controller, as the name suggests. The last one is the interrupt
-handler and, together with rfstrategy() provides the main functionality. The
+handler and, together with `rfstrategy()` provides the main functionality. The
 second is a helper function of the interrupt handler.
 
 ```
@@ -995,44 +991,44 @@ int rfcprobedens(struct rfc_softc *, int);
 ```
 
 This is just a helper function for debugging purposes. Also see the comments
-in rfc attach.
+in `rfc_attach`.
 
 Now, before we get into in the annoying little details of each function, a short
-overview of the basic process flow within the driver: In order to be able to do anything with the device, we need to first call rfopen(). This always happens and is
+overview of the basic process flow within the driver: In order to be able to do anything with the device, we need to first call `rfopen()`. This always happens and is
 essential to the driver, since it's the only way for it to initialize itself. Note that the
-open() function of a driver may appear several times after another, for example
+`open()` function of a driver may appear several times after another, for example
 in order to open different partitions of a disk or several ports on a serial multi-port
 card (with different minor device numbers) as well as to transfer data over a file
-handle while receiving instructions from another via ioctl (with the same minor
+handle while receiving instructions from another via `ioctl` (with the same minor
 device numbers). Either a process from user-space that opens the device node or
-the kernel itself (for example through mount(2)) initiates the open() function
+the kernel itself (for example through `mount(2)`) initiates the `open()` function
 call.
 
 Noteworthy: Each time a user or a kernel process opens the device node (for
-example through a mount(2) oder in the context of RAIDframe(9)) the open()
-function is called. But the close() function is not called until the last user of
-the device executes a close(). For example: Three processes, A, B, and C open
+example through a `mount(2)` oder in the context of `RAIDframe(9)`) the `open()`
+function is called. But the `close()` function is not called until the last user of
+the device executes a `close()`. For example: Three processes, A, B, and C open
 one after another the same device node and keep it open, leading to three calls of
-the open() function. Process A closes the device node - the driver doesn't care.
+the `open()` function. Process A closes the device node - the driver doesn't care.
 Process C closes the device node – still, the driver doesn't care. Only after process
-B closed the device node, the close() function call is made, since this process
+B closed the device node, the `close()` function call is made, since this process
 was the last one to have an open handle on the device node.
 
-Data transfer from and to the hardware are handled by the rfstrategy()
+Data transfer from and to the hardware are handled by the `rfstrategy()`
 function. This is the drivers point of access for data transfer, provided by the
-driver to the kernel. On each call, rfstrategy() receives a pointer to a single
-buffer. These infamous buffers are used by the buffer cache and describe a block
+driver to the kernel. On each call, `rfstrategy()` receives a pointer to a single
+*buffer*. These infamous buffers are used by the buffer cache and describe a block
 oriented data transfer, i.e. which data should be read from RAM at which position
 / address on which device, or what should be read from where in RAM.
 
-The strategy() function itself usually does not perform any I/O operations,
+The `strategy()` function itself usually does not perform any I/O operations,
 but performs a few checks and simply organizes the I/O operations. Basically, this
-boils down to sorting the buffers in the bufferqueue (thus strategy). Other routines
+boils down to sorting the buffers in the bufferqueue (thus *strategy*). Other routines
 then walk down the bufferqueues buffer by buffer. The number of these routines,
 what exactly they do and how they do it is very specific to each driver. The kernel
 does not tell the driver how to do this.
 
-Typically, there exists at least one helper functions aside from strategy():
+Typically, there exists at least one helper functions aside from `strategy()`:
 the interrupt handler. Compared to the CPU, I/O devices are rather slow. Therefore, you can't just simply wait until an I/O operation is finished. Instead, the
 driver initiates an operation and kernel does other things, such as dispatching the
 processing cycles etc. When the hardware has finished the I/O operation, it causes
@@ -1042,16 +1038,16 @@ interrupt handler in turn finished the I/O operation by checking the error code 
 the hardware (for example a read error of the floppy), moving indices within the
 buffer, taking the next buffer out of the queue, etc.
 
-#### rfdump()
+#### `rfdump()`
 ... is used by the kernel to barf a core dump onto the disk or into swapspace, if
 it needs to abort. I think it's improbable that a floppy with 0.5MB capacity will
-be sufficient to cause this. Therefore, this function simply consists of return(
-ENXIO);. Also see errno(2).
+be sufficient to cause this. Therefore, this function simply consists of `return(
+ENXIO);`. Also see `errno(2)`.
 
-#### rfsize()
-Gives back the (swap) partitions size in chunks of DEV BSIZE size.
+#### `rfsize()`
+Gives back the (swap) partitions size in chunks of `DEV BSIZE` size.
 
-#### rfopen()
+#### `rfopen()`
 ```
 rfopen(dev_t dev, int oflags, int devtype, struct proc *p)
 {
@@ -1066,21 +1062,21 @@ rfopen(dev_t dev, int oflags, int devtype, struct proc *p)
         }
 ```
 
-First, rfopen() needs to determine if the device does actually exist, and if
-so, it needs to fetch the softc data structure for the device. The path from the
-device number to the softc data structure is, as you can see, relatively easy, once
-you know it. The DISKUNIT() macro uses the minor device number to determine which instance number of the device is addressed by the device number.
-See sys/disklabel.h. This is where the cfdriver data structure comes into
-play. For each device mentioned in the kernels configuration file, config(8)
-creates an instance of the data structur in ioconf.[ch] inside the kernel compilation directory, using a naming convention of <DEV>_cd. Here, <DEV> represents
-the name given in the kernel configuration file, rf in this case. cd stands for
-ConfigurationDriver. The type definitions of this data structure can be found in
-sys/device.h. The cd defs field of this data structure is an array of pointers,
-pointing to a softc data structure of an instance of the device. Since device
+First, `rfopen()` needs to determine if the device does actually exist, and if
+so, it needs to fetch the `softc` data structure for the device. The path from the
+device number to the `softc` data structure is, as you can see, relatively easy, once
+you know it. The `DISKUNIT()` macro uses the minor device number to determine which instance number of the device is addressed by the device number.
+See `sys/disklabel.h`. This is where the `cfdriver` data structure comes into
+play. For each device mentioned in the kernels configuration file, `config(8)`
+creates an instance of the data structur in ioconf.[ch] inside the kernel compilation directory, using a naming convention of `<DEV>_cd`. Here, `<DEV>` represents
+the name given in the kernel configuration file, `rf` in this case. `cd` stands for
+*C*onfiguration*D*river. The type definitions of this data structure can be found in
+`sys/device.h`. The `cd_defs` field of this data structure is an array of pointers,
+pointing to a `softc` data structure of an instance of the device. Since device
 may be added or removed during kernel runtime, this array is dynamic. The field
-cd ndevs contains the total number of instances for the device (i.e. number of
-fields in cd devs). Furthermore, there's cd name, a pointer to a string with the
-name of the device and an enum describing the device class, cd class.
+`cd_ndevs` contains the total number of instances for the device (i.e. number of
+fields in `cd_devs`). Furthermore, there's `cd_name`, a pointer to a string with the
+name of the device and an enum describing the device class, `cd_class`.
 
 ```
         rfc_sc = (struct rfc_softc *)rf_sc->sc_dev.dv_parent;
@@ -1117,10 +1113,10 @@ name of the device and an enum describing the device class, cd class.
         }
 ```
 
-Typically, you mark the open state in the softc data structure and block the
+Typically, you mark the open state in the `softc` data structure and block the
 manual ejection. This way, you can prevent multiple simultaneous accesses of the
 same device and remember if the device has been opened in a special mode. The
-rf(4) driver takes advantage of this by assigning different minor device numbers
+`rf(4)` driver takes advantage of this by assigning different minor device numbers
 (i.e. partitions for a disk driver) to single or double write speeds or determining
 the write speed automatically from the format of the floppy disk.
 
@@ -1157,28 +1153,28 @@ the write speed automatically from the format of the floppy disk.
 The drive has not been initialized at the first open call, that is, a sector needs
 to be read from the floppy in order to determine if the inserted medium has the
 appropriate density (or in order to determine the actual density when using "auto
-density"). Therefore, the driver enters a RFS PROBING state and reports the floppy
+density"). Therefore, the driver enters a `RFS_PROBING` state and reports the floppy
 disk as being "busy" (
-Using disk busy is not necessary strictly speaking, but certainly a nice thing to do and can be used to determine statistical data; see iostat(8).
+Using `disk_busy` is not necessary strictly speaking, but certainly a nice thing to do and can be used to determine statistical data; see `iostat(8)`.
 ). Afterwards, the controller receives a command to read the
 sector and the driver waits for the (non) successful return of this command.
 
-The problem with this: You can just loop around using DELAY() in
-rfc match() (busy wait), which would mean that the entire machine is completely frozen. We are inside the kernel! (In rfc match(), this is feasible, as it only happens during boot.)
-The proper solution to the problem are the functions tsleep(9) and
-wakeup(9). rfopen() was caused by some process, and that process needs to
+The problem with this: You can just loop around using `DELAY()` in
+`rfc_match()` (busy wait), which would mean that the entire machine is completely frozen. We are inside the kernel! (In `rfc_match()`, this is feasible, as it only happens during boot.)
+The proper solution to the problem are the functions `tsleep(9)` and
+`wakeup(9)`. `rfopen()` was caused by some process, and that process needs to
 wait until the operation has completed. Other processes can happily continue.
-tsleep(9) marks the process that caused the rfopen() operation as "sleeping"
+`tsleep(9)` marks the process that caused the `rfopen()` operation as "sleeping"
 and tells the scheduler to allow the other processes to use the CPU until the operation has completed.
 
 This completion then happens inside the interrupt handler. The controller, as
-we know, received a read-command via the interrupt enable (RX2CS IE), meaning
+we know, received a read-command via the interrupt enable (`RX2CS_IE`), meaning
 the controller causes an interrupt as soon as the command has completed, which
 in turn causes the call of the interrupt handler. The interrupt handler checks the
 result of the command, manipulates the state variable of the driver accordingly
-and tells the scheduler via wakeup(9), that the operation has completed and the
+and tells the scheduler via `wakeup(9)`, that the operation has completed and the
 sleeping processes can be awakened. The next time the process gets any cycles on
-the CPU, it continues inside rfopen() at the same point at which tsleep(9) was
+the CPU, it continues inside `rfopen()` at the same point at which `tsleep(9)` was
 called. Therefore, this is the spot at which we need to check whether or not the
 interrupt handler has determined a successful completion or if there was a timeout.
 
@@ -1205,10 +1201,10 @@ interrupt handler has determined a successful completion or if there was a timeo
 ```
 
 A driver for a medium supporting partitions should make sure to read the
-disklabel(5,9)s at this point. Since we do not support disklabel(5,9) on
-RX01/02 floppies, we just create pseudo disklabel(5,9).
+`disklabel(5,9)`s at this point. Since we do not support disklabel(5,9) on
+RX01/02 floppies, we just create pseudo `disklabel(5,9)`.
 
-#### rfclose()
+#### `rfclose()`
 ```
 int
 rfclose(dev_t dev, int fflag, int devtype, struct proc *p)
@@ -1234,10 +1230,10 @@ rfclose(dev_t dev, int fflag, int devtype, struct proc *p)
 Closing a device that hasn't been opened before, is a serious problem, and
 causes a kernel panic. In the other case, we simply reset the bit that marks the
 partition as opened. The last if statement checks, if all partitions have been closed
-and if so, all the blocks created by rfopen need to be removed and the softc data
+and if so, all the blocks created by `rfopen` need to be removed and the `softc` data
 structur needs to be reinitialized.
 
-#### rfread() and rfwrite()
+#### `rfread()` and `rfwrite()`
 Consisting of:
 
 ```
@@ -1246,22 +1242,22 @@ bzw.
 return( physio( rfstrategy, NULL, dev, B_WRITE, minphys, uio));
 ```
 
-If a process wants to read(2) or write(2) data to the character device node,
+If a process wants to `read(2)` or `write(2)` data to the character device node,
 these system calls will resolve the mapping of the file descriptor to the device
-nide. The buffer given to read(2)/write(2) is separated by the system call until
+nide. The buffer given to `read(2)`/`write(2)` is separated by the system call until
 only an array of pointers to the pages in physical RAM are left (plus offset and
-length within the page). These pointers then end up in the uio structure. The
-physio() function changes these pointers to pages into file system buffers within
-the uio structure, as they are used by the buffer cache (struct buf) and calls
-strategy() to pass the file system buffers one by one to the driver. Also see
-physio(9) and sys/kern/kern physio.c. Access of the character device do
-not use the buffer cache, but instead physio(9) will transfer the data immediately
+length within the page). These pointers then end up in the `uio` structure. The
+`physio()` function changes these pointers to pages into file system buffers within
+the `uio` structure, as they are used by the buffer cache `(struct buf)` and calls
+`strategy()` to pass the file system buffers one by one to the driver. Also see
+`physio(9)` and `sys/kern/kern physio.c`. Access of the character device do
+`not` use the buffer cache, but instead `physio(9)` will transfer the data immediately
 from and to the memory of the process and the driver.
 
-#### rfstrategy()
+#### `rfstrategy()`
 As mentioned above, this function is the main part of the driver with respect to
 data transfer. It takes the buffers and fills or empties them, but doesn't perform
-any IO operations itself. Instead, rfstrategy() writes these IO requests into one
+any IO operations itself. Instead, `rfstrategy()` writes these IO requests into one
 or more queues. It's the responsibility of the driver to sort the queues in a way
 that reduces seeks of the read/write-head. The queues are emptied by the interrupt
 handler. Each time, the hardware has completed an IO operation, it causes an
@@ -1285,10 +1281,10 @@ rfstrategy(struct buf *buf)
         }
 ```
 
-In order to get to the rf_sc softc data structure, we do the same dance
+In order to get to the `rf_sc softc` data structure, we do the same dance
 as before, with the exception of the error handling. A buffer may be treated
 as a work order; different buffers are independent of one another. Remember,
-frstrategy() is the only point of entrance for all rf(4) instances. A buffer
+`rfstrategy()` is the only point of entrance for all `rf(4)` instances. A buffer
 may receive a work order for the first drive and complete it successfully. Another
 buffer may be related to a drive that isn't physically present, so that it must fail.
 Or maybe one of the buffers may fail due to a broken sector but the rest of the
@@ -1296,11 +1292,11 @@ buffers are not affected by this.
 
 The point in time at which the buffer will be "done" is unknown. If the drive
 is not physically present, we can check for it (using the above if statement) when
-calling rfstrategy(). But it's possible that the buffer was sorted way back in
-the queue, in which case it will be worked on much later, after rfstrategy() has
-long since "eaten" the buffer and returned. In other words, finishing a buffer is
-asynchronous to the rfstrategy() function, which is why the kernel needs to be
-signaled when a buffer is ready using biodone(9). If an error occurs, you set a
+calling `rfstrategy()`. But it's possible that the buffer was sorted way back in
+the queue, in which case it will be worked on much later, after `rfstrategy()` has
+long since "eaten" the buffer and `return`ed. In other words, finishing a buffer is
+asynchronous to the `rfstrategy()` function, which is why the kernel needs to be
+signaled when a buffer is ready using `biodone(9)`. If an error occurs, you set a
 flag and pass an appropriate error code accordingly (as we can see above).
 
 ```
@@ -1322,7 +1318,7 @@ The comment says all.
         }
 ```
 
-A small optimization. If buf->b bcount == 0, there's nothing to be done
+A small optimization. If `buf->b bcount == 0`, there's nothing to be done
 and we are done with the buffer immediately.
 
 ```
@@ -1354,9 +1350,9 @@ and we are done with the buffer immediately.
 }
 ```
 
-Let's assume, rfstrategy() receives three buffers shortly after one another.
+Let's assume, `rfstrategy()` receives three buffers shortly after one another.
 The first reads a sector from track 1, the seconds reads a sector from the last track
-and the thirds reads a sector from somewhere in the middle. If rfstrategy()
+and the thirds reads a sector from somewhere in the middle. If `rfstrategy()`
 blindly followed the order in which it received the buffers, it would need to move
 the read/write head first to track 1, then all the way across the disk to the last
 track and then back to the middle. But moving the read/write head is slow, i.e.
@@ -1364,26 +1360,26 @@ track and then back to the middle. But moving the read/write head is slow, i.e.
 sort the buffer queue such that we work the first buffer first, then the third and
 finally the second buffer. This way, reading the sector in the middle happens kind
 of "on the way". Fortunately, the driver doesn't need to care too much about
-sorting the buffers and leaves that to BUFQ PUT(). BUFQ PUT() expects the trackor cylinder number (depending on the disk geometry) in the b resid field in order
-to optimize it according to the cylinder numbers. BUFQ PUT() then enters the
+sorting the buffers and leaves that to `BUFQ_PUT()`. `BUFQ_PUT()` expects the trackor cylinder number (depending on the disk geometry) in the b resid field in order
+to optimize it according to the cylinder numbers. `BUFQ_PUT()` then enters the
 buffer into the buffer queue and sorts is appropriately.
 
-The entire sorting process is, however, not necessary if the controller is currently idle. In that case, rfc sc->sc curbuf == NULL. As the name suggests,
-rfc sc->sc curbuf points to the buffer currently being worked on. If the controller is idle, then the buffer is pointed to the current one and all related variables
-within softc are initialized with it. If a new buffer arrives while the first is being worked on in rfc sc->sc curbuf, they are put in the buffer queue. Calling
-rfc intr() initiates the actual data transfer. The rest is done in rfc intr() in
+The entire sorting process is, however, not necessary if the controller is currently idle. In that case, `rfc_sc->sc_curbuf == NULL`. As the name suggests,
+`rfc_sc->sc_curbuf` points to the buffer currently being worked on. If the controller is idle, then the buffer is pointed to the current one and all related variables
+within softc are initialized with it. If a new buffer arrives while the first is being worked on in `rfc_sc->sc_curbuf`, they are put in the buffer queue. Calling
+`rfc_intr()` initiates the actual data transfer. The rest is done in `rfc_intr()` in
 the context of an interrupt.
 
 Interruptcontext, what's that exactly anyway, and are there other contexts?
 Simplified, there are three contexts under Unix:
 
-Usercontext: A normal user process utilizes the CPU. The time is the same as
-"'xx% user"' under top(1) or time(1).
+**Usercontext**: A normal user process utilizes the CPU. The time is the same as
+"'xx% user"' under `top(1)` or `time(1)`.
 
-Kernelcontext: A userland process has made a system call. Kernel code in privileged mode is executed, but still under the current process space. The time
-is the same as "'xx% system"' under top(1) or time(1).
+**Kernelcontext**: A userland process has made a system call. Kernel code in privileged mode is executed, but still under the current process space. The time
+is the same as "'xx% system"' under `top(1)` or `time(1)`.
 
-Interruptcontext: The hardware has caused an interrupt of the code execution
+**Interruptcontext**: The hardware has caused an interrupt of the code execution
 while the CPU was in user- or kernelcontext. This interrupt has higher
 priority than the user- or kernelcontext. The current state of the CPU is
 saved and the interrupt handler called. The interrupt handler manages the
@@ -1392,20 +1388,20 @@ where it left off. User- and kernel code do not know anything about this.
 
 The alert reader already will have noticed a problem here: an interrupt is an
 asynchronous event, which may happen at any time. For example, at the time
-that rfstrategy() manipulates the bufferqueue, adding a new buffer. But the
-interrupt handler of the rf(4) driver also manipulates the buffer queue (it removes
+that `rfstrategy()` manipulates the bufferqueue, adding a new buffer. But the
+interrupt handler of the `rf(4)` driver also manipulates the buffer queue (it removes
 a buffer). If this happens, then the buffer queue ends up in an inconsistent state.
 Booom, kernel panic, game over.
 
-This is why rfstrategy() has to use splbio(9) in order to assure that no
-interrupt can occur at this time. This function blocks all interrupts until they are released by a call to splx(9). The time, during which interrupts are blocked should
+This is why `rfstrategy()` has to use `splbio(9)` in order to assure that no
+interrupt can occur at this time. This function blocks all interrupts until they are released by a call to `splx(9)`. The time, during which interrupts are blocked should
 always be kept to a minimum, since not only interrupts for this particular device
 are blocked, but all interrupts! If interrupt blocks are prolonged, an interrupt for a
 different device might be delayed, reducing the I/O rate.
 
-To be more precise: There are different interrupt priorities. IPL BIO, for example, is rather low and is used by block devices such as disks and floppies. These
+To be more precise: There are different interrupt priorities. `IPL_BIO`, for example, is rather low and is used by block devices such as disks and floppies. These
 devices are slow anyway and usually have bigger buffers in their hardware on the
-controller. So it doesn't matter, if the device waits a little bit longer on its interrupts. Network cards use IPL NET, which has higher priority over IPL BIO.
+controller. So it doesn't matter, if the device waits a little bit longer on its interrupts. Network cards use `IPL_NET`, which has higher priority over `IPL_BIO`.
 Network cards are "faster" than disks (no mechanics) and buffer overflows in a
 network card are more expensive, as they can cause TCP retries and thus increase
 the network load and decrease throughput. These priorities make it possible for
@@ -1417,9 +1413,9 @@ So, it is not only important to block interrupts only for a short period of time
 but also with the right priority. If the priority is too low, then your own interrupt
 handler can't take the interrupt, if it's too high, other devices throughput may
 suffer. For more information on the relationship among the different priorities,
-see spl(9).
+see `spl(9)`.
 
-Figure 3: rf(4)'s interal states.
+Figure 3: `rf(4)`'s interal states.
 
 #### rfc intr()
 Most of the work of the driver, such as filling the buffer and working through the
