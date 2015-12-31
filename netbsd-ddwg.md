@@ -250,12 +250,12 @@ does support a bus or a controller.) What's up with these `config_search()` and
 There are two cases when integrating a device on a bus:
 
 * direct configuration
-** The bus adapter hardware provides a complete list of all
+ - The bus adapter hardware provides a complete list of all
 currently available physically available child-devices. By reading the "PCI
 configuration space", a bus driver can find out which PCI devices are currently available and thus only pull in the drivers for those devices.
 
 * indirect configuration
-** With the QBus or ISA, the second case applies. With
+ - With the QBus or ISA, the second case applies. With
 these busses, the driver can not simply loop through all the bus addresses to
 determine which devices do (and do not) exist.
 
