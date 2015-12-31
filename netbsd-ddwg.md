@@ -1417,46 +1417,46 @@ see `spl(9)`.
 
 Figure 3: `rf(4)`'s interal states.
 
-#### rfc intr()
+#### `rfc_intr()`
 Most of the work of the driver, such as filling the buffer and working through the
-buffer queue is done within rfc intr(). In order to perform an operation, the
-driver has to go through a sequence of states. After the first open() call, the state
-is set from RFS NOTINIT to RFS PROBING until the mediums capacity has been
-determined. Then, the driver enters the RFS IDLE state until a buffer containing a
+buffer queue is done within `rfc_intr()`. In order to perform an operation, the
+driver has to go through a sequence of states. After the first `open()` call, the state
+is set from `RFS_NOTINIT` to `RFS_PROBING` until the mediums capacity has been
+determined. Then, the driver enters the `RFS_IDLE` state until a buffer containing a
 read or write command arrives.
 
 In order to read or write a sector, two commands needs to be sent to the
-controller. First, a read command RX2CS RSEC (ReadSECtor) to read the internal controller buffer, then the DMA-command RX2CS EBUF (EmptyBUFfer) to
-transfer the data from the controller into the RAM. If not all data has been transferred from the buffer queue, the driver sends the next RX2CS RSEC command,
-then RX2CS EBUF, and so on until the bufferqueue has been emptied. Similarly,
+controller. First, a read command `RX2CS_RSEC` (ReadSECtor) to read the internal controller buffer, then the DMA-command `RX2CS_EBUF` (EmptyBUFfer) to
+transfer the data from the controller into the RAM. If not all data has been transferred from the buffer queue, the driver sends the next `RX2CS_RSEC` command,
+then `RX2CS_EBUF`, and so on until the bufferqueue has been emptied. Similarly,
 when writing data they first need to be transferred from RAM into the internal
-controller buffer via DMA RX2CS FBUF (FillBUFfer) so they can then be written
-to the media with a second command RX2CS WSEC (WriteSECtor) until the next
-RX2CS FBUF command ... until the next buffer from the buffer queue arrives.
+controller buffer via DMA `RX2CS_FBUF` (FillBUFfer) so they can then be written
+to the media with a second command `RX2CS_WSEC` (WriteSECtor) until the next
+`RX2CS_FBUF` command ... until the next buffer from the buffer queue arrives.
 
-These commands correspond to the RFS RSEC, RFS EBUF, RFS FBUF,
-RFS WSEC states.
-The four other commands RX2CS SMD, RX2CS RSTAT,
-RX2CS WDDS, RX2CS REC and their states are not used by the driver at this point.
-RFS RSEC does not always have to follow RFS EBUF. If the buffer has been finished and the buffer queue is empy, then the driver enters the RFS IDLE state. if
+These commands correspond to the `RFS_RSEC`, `RFS_EBUF`, `RFS_FBUF`,
+`RFS_WSEC` states.
+The four other commands `RX2CS_SMD`, `RX2CS_RSTAT`,
+`RX2CS_WDDS`, `RX2CS_REC` and their states are not used by the driver at this point.
+`RFS_RSEC` does not always have to follow `RFS_EBUF`. If the buffer has been finished and the buffer queue is empy, then the driver enters the RFS IDLE state. if
 the buffer queue is not empty, but a new buffer containing data that needs to be
-written follows, a transition from RFS EBUF to takes place. Similarly, there are
-transitions from RFS WSEC to RFS IDLE or RFS RSEC. The frc sendcmd function
+written follows, a transition from `RFS_EBUF` to takes place. Similarly, there are
+transitions from `RFS_WSEC` to `RFS_IDLE` or `RFS_RSEC`. The frc sendcmd function
 simplifies the sending of commands a little bit.
 
 Due to the length of this function, we only give an explanation of the basics
-and some excerpts with special meaning: The functions consists of tw switch
+and some excerpts with special meaning: The functions consists of tw `switch`
 statements. The first takes care of finding the last command / state and finish the
-last operation. The second initializes the next command. Both switch statements
+last operation. The second initializes the next command. Both `switch` statements
 reside within a loop, which is aborted if a new command has successfully been
 sent to the controller or the buffer queue is found to be empty. If an error occurred,
-the interrupt handler continues at the beginning of the loop and tries to work the
-next buffer. (Some other drivers contains a goto, but since I prefer spaghetti over
+the interrupt handler `continue`s at the beginning of the loop and tries to work the
+next buffer. (Some other drivers contains a `goto`, but since I prefer spaghetti over
 spaghetti code, I chose the loop.)
 
 The following are the excerpts of the program that might be encountered
-when performing a read starting with the RFS IDLE state, beginning with the
-get new buf() helper function.
+when performing a read starting with the `RFS_IDLE` state, beginning with the
+`get_new_buf()` helper function.
 
 ```
 struct rf_softc*
@@ -1488,13 +1488,13 @@ get_new_buf( struct rfc_softc *rfc_sc)
 }
 ```
 
-This function is called by rfc_intr if a buffer is finished in order to receive the next buffer. The controller manages two drives. First, this function checks if another buffer waits in the buffer queue of the current drive
-(rfc sc->sc curchild). If so, the next buffer in this queue is sued. If the
+This function is called by `rfc_intr` if a buffer is finished in order to receive the next buffer. The controller manages two drives. First, this function checks if another buffer waits in the buffer queue of the current drive
+`(rfc_sc->sc_curchild)`. If so, the next buffer in this queue is sued. If the
 buffer queue is empty, the drive is marked as idle and the buffer queue of the
-next drive (other drive) is checked. If no buffers are available, no further action takes place. If there are any buffers, the function switches the current drive
-(rfc sc->sc curchild) and initializes the next buffer. The return value of the
-function is NULL, if both buffer queues are empty. Otherwise, it's a pointer to the
-softc structure of the drive whose buffer queue is being worked on.
+next drive `(other drive)` is checked. If no buffers are available, no further action takes place. If there are any buffers, the function switches the current drive
+`(rfc_sc->sc_curchild)` and initializes the next buffer. The return value of the
+function is `NULL`, if both buffer queues are empty. Otherwise, it's a pointer to the
+`softc` structure of the drive whose buffer queue is being worked on.
 
 ```
         /* first switch statement */
@@ -1513,9 +1513,9 @@ softc structure of the drive whose buffer queue is being worked on.
             break;
 ```
 
-The if-statement is a security check. The RFS SETCMD macro simplifies setting
-the rf sc->sc state variable. Depending on whether the current buffer contains
-a read or a write command, it contains RFS RSEC or RFS FBUF.
+The if-statement is a security check. The `RFS_SETCMD` macro simplifies setting
+the `rf_sc->sc_state` variable. Depending on whether the current buffer contains
+a read or a write command, it contains `RFS_RSEC` or `RFS_FBUF`.
 
 ```
         /* second switch statement */
@@ -1540,19 +1540,19 @@ a read or a write command, it contains RFS RSEC or RFS FBUF.
 ```
 
 The first instructions computes the logical block number to be read by the
-floppy and stores it in i. Note that the RX02 drive does not use the usual 512
-(DEV BSIZE, the value of buf->b blkno), but 128 Bytes per sector (RX2 BYTE SD)
-in single and 256 Bytes per sector (RX2 BYTE DD) in double density. The ifstatement checks of the sector requested by the buffer is higher than the capacity
+floppy and stores it in `i`. Note that the RX02 drive does not use the usual 512
+(`DEV BSIZE`, the value of `buf->b_blkno`), but 128 Bytes per sector (`RX2_BYTE_SD`)
+in single and 256 Bytes per sector (`RX2_BYTE_DD`) in double density. The ifstatement checks of the sector requested by the buffer is higher than the capacity
 of the floppy and if so, sets the error flag in the buffer and aborts the operation.
-See the explanation in 4.2.3 for details regarding disk busy().
+See the explanation in 4.2.3 for details regarding `disk_busy()`.
 
 Well, and finally the controller receives the command to read a sector
-(RX2CS RSEC) with the interrupt bit RX2CS IE enabled via rfc sendcmd(). If
-this fails, then the error handler a the end of the loop around the two switch
+(`RX2CS_RSEC`) with the interrupt bit `RX2CS_IE` enabled via `rfc_sendcmd()`. If
+this fails, then the error handler a the end of the loop around the two `switch`
 statements jumps in:
 
-The rfc_intr() function checks if the error flag has been set after each of the
-two switch statements and brings the driver into a defined state in the case of an
+The `rfc_intr()` function checks if the error flag has been set after each of the
+two `switch` statements and brings the driver into a defined state in the case of an
 error:
 
 ```
@@ -1576,7 +1576,7 @@ error:
 
 Ok, the interrupt handler has finished and we can return to our old context...
 until the controller has finished the command an causes an interrupt. Then we
-continue with the interrupt handler of the rf(4) driver:
+continue with the interrupt handler of the `rf(4)` driver:
 
 ```
         /* first switch statement */
@@ -1592,8 +1592,8 @@ RFS_EBUF); break;
 ```
 
 First we need to tell the kernel that the drive is no longer busy, that so far 0
-Bytes have been transferred and that we received a read command. The if statement checks the error flag (RX2CS ERR) in the CSR of the controller and aborts the
-process if necessary. At this point, we could use the RX2CS RSTAT and RX2CS REC
+Bytes have been transferred and that we received a read command. The if statement checks the error flag (`RX2CS_ERR`) in the CSR of the controller and aborts the
+process if necessary. At this point, we could use the `RX2CS_RSTAT` and `RX2CS_REC`
 commands to add some more detailed error diagnostics.
 
 ```
@@ -1625,7 +1625,7 @@ commands to add some more detailed error diagnostics.
             break;
 ```
 
-An upcoming DMA-transfer needs to be registered with the bus dma(9) system. The UniBus has an 18 bit address space, and the QBus has a 22 bit address
+An upcoming DMA-transfer needs to be registered with the `bus_dma(9)` system. The UniBus has an 18 bit address space, and the QBus has a 22 bit address
 space (at least on VAXen). That means that a UniBus / QBus device can not
 fill the entire address space of the CPU, but only a part of it, similar to the ISA
 Bus with its 24 bit address space. But since the people working at DEC used
@@ -1637,10 +1637,10 @@ any UniBus / QBus address can be translated into any CPU address. This way,
 a UniBus / QBus device can fill the entire CPU adress space via the BusmasterDMA, assuming that the bus adapter MMU has been programmed correctly. If
 there is no such MMU inside the bus adapter, then we are stuck using a "bounce
 buffer", as under ISA (see [Tho]). But we do not need to care about all this when
-writing a driver, bus dmamap load(9) takes care of this.
-The driver can register the floppy as busy as long as the bus dma(9) system
+writing a driver, `bus_dmamap_load(9)` takes care of this.
+The driver can register the floppy as busy as long as the `bus_dma(9)` system
 hands a DMA map to the driver and the actual DMA operation can be initiated
-using the RX2CS EBUF command. And once again, we wait for the next interrupt...
+using the `RX2CS_EBUF` command. And once again, we wait for the next interrupt...
 
 ```
         /* first switch statement */
@@ -1661,7 +1661,7 @@ using the RX2CS EBUF command. And once again, we wait for the next interrupt...
             }
 ```
 
-This call to rfc_intr() ends the transfer. disk unbusy(9) tells the guys is
+This call to `rfc_intr()` ends the transfer. `disk_unbusy(9)` tells the guys is
 statistics how many bytes have been read, the DMA map is freed and the usual
 error checks are made.
 
@@ -1671,7 +1671,7 @@ error checks are made.
                 rfc_sc->sc_bufidx += i;
 ```
 
-The buffer is not quite empty yet, so we need to advance the pointer and prepare the next RFS RSEC command...
+The buffer is not quite empty yet, so we need to advance the pointer and prepare the next `RFS_RSEC` command...
 
 ```
             } else {
@@ -1687,15 +1687,15 @@ The buffer is not quite empty yet, so we need to advance the pointer and prepare
 ```
 
 Ah! The buffer has successfully and completely been finished, so we can tell
-the rest of the kernel via biodone(9) so. Then we need to check if other buffers
+the rest of the kernel via `biodone(9)` so. Then we need to check if other buffers
 are waiting in the buffer queue and if so, work on those. If there are no more
 buffers in the queue for this drive, set it to idle and switch to the other drive,
 in case new buffers have been added to that drives queue, while we were busy
 working on the first drive.
 
-#### rfioctl()
-This function is the entrance point for the ioctl(2) calls of the device. In this
-case, only die IOCTLs to read the disklabel(5,9) are absolutely necessary, all
+#### `rfioctl()`
+This function is the entrance point for the `ioctl(2)` calls of the device. In this
+case, only die IOCTLs to read the `disklabel(5,9)` are absolutely necessary, all
 other IOCTLs are not required or do not make sense in this driver. The RX02 drive
 can not be blocked by the software, the medium can not be ejected, the hardware
 is incapable of performing a low-level format...
