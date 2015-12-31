@@ -345,8 +345,8 @@ The actual driver does not need to take care of the structure or the content of 
 tags and handles, but can simply make use of them.
 Well, now it's about time to read `bus_space(9)` and `bus_dma(9)`. ;-)
 
-## The autoconf(9) part of the rf(4) driver
-And here we go. We want to write a driver for the VAX. The rf(4) driver consists, from the point of view of autoconf(9), of two drivers. One driver for the
+## The `autoconf(9)` part of the `rf(4)` driver
+And here we go. We want to write a driver for the VAX. The `rf(4)` driver consists, from the point of view of `autoconf(9)`, of two drivers. One driver for the
 controller and one driver for the attached drives.
 
 First a comment about the basic structure of the drivers source code: The code
@@ -357,7 +357,7 @@ or a BSD-like license. After that comes a comment with common notes, such as
 statements, starting with the common, kernel include files up to the special include
 files that are only used by this driver. Next are the preprocessor directions such as
 macro definitions and symbolic constants, followed by the functions prototypes
-and the declaration of data structures and -types. See /usr/share/misc/style
+and the declaration of data structures and -types. See `/usr/share/misc/style`
 (also found in the appendix). This file explains the indentations rules, which must
 be followed for NetBSD source code. (If you ever want to see the code in the
 NetBSD CVS repository.)
@@ -370,12 +370,12 @@ rf*   at rfc? drive?       # RX01/RX02 floppy disk drive
 ```
 
 That's all we need to add to the kernels configuration file to activate the driver.
-The csr is the locator of the UniBus / QBus. It is given in octal and represents the
+The `csr` is the locator of the UniBus / QBus. It is given in octal and represents the
 address of the device under which it identifies itself on the QBus.
 
-#### sys/dev/qbus/files.uba
+#### `sys/dev/qbus/files.uba`
 Then we need to enter our driver and the files that implement it in
-sys/dev/qbus/files.uba (files.uba instead of files.qbus, as the UniBus existed before the QBus.):
+`sys/dev/qbus/files.uba` (`files.uba` instead of `files.qbus`, as the UniBus existed before the QBus.):
 ```
 # RX01/02 floppy disk controller
 device rfc { drive=-1 }
@@ -385,25 +385,25 @@ attach rf at rfc
 file dev/qbus/rf.c
 ```
 
-The first line announces to config(8), that there is a driver called rfc. Since
-other devices may attach to rfc, and it thus represents an interface attribute, we
-tell config(8) to use the locator drive. Since the rfc driver supports direct
+The first line announces to `config(8)`, that there is a driver called `rfc`. Since
+other devices may attach to `rfc`, and it thus represents an interface attribute, we
+tell `config(8)` to use the locator `drive`. Since the `rfc` driver supports direct
 configuration, it makes sense to allow wildcards, we pass a standard value of -1 to
 the locator. (See 2.4 as well as -1.)
 
-The second line informs config(8), that rfc attaches to the uba bus (=interface attribute). Accordingly, the fourth line describes the connection between rf
-and rfc.
+The second line informs `config(8)`, that `rfc` attaches to the `uba` bus (=interface attribute). Accordingly, the fourth line describes the connection between `rf`
+and `rfc`.
 
-The third line is a little bit more interesting. This line defines the rf driver and
-associates it with the disk attribute (Actually, disk is a "device class", whatever the precise difference between an attribute and a "device class" may be.).
+The third line is a little bit more interesting. This line defines the `rf` driver and
+associates it with the `disk` attribute (Actually, `disk` is a "*device class*", whatever the precise difference between an attribute and a "device class" may be.).
 
-The last line finally makes sure that the file sys/dev/qbus/rf.c is compiled into the kernel if one of the rfc and / or rf attributes is found in the
-current kernel configuration. needs-flag assures that the file rf.h is created
-by config(8) in the compilation directory. This file contains #define NRF 1
-and #define NRFC 1 if the rf(4) driver is compiled into the kernel and
-#define NRF 0 and #define NRFC 0 if it isn't. These preprocessor constants
+The last line finally makes sure that the file `sys/dev/qbus/rf.c` is compiled into the kernel if one of the `rfc` and / or `rf` attributes is found in the
+current kernel configuration. `needs-flag` assures that the file `rf.h` is created
+by `config(8)` in the compilation directory. This file contains `#define NRF 1`
+and `#define NRFC 1` if the `rf(4)` driver is compiled into the kernel and
+`#define NRF 0` and `#define NRFC 0` if it isn't. These preprocessor constants
 can be used by other parts of the source code if they depend on the (non-) existence of the driver
-(Up until NetBSD 1.6-release these preprocessor constants are also necessary for handling the Majordevice numbers of the character- and block device nodes. Therefore, needs-flag is absolutely necessary in those versions.).
+(Up until NetBSD 1.6-release these preprocessor constants are also necessary for handling the Majordevice numbers of the character- and block device nodes. Therefore, `needs-flag` is absolutely necessary in those versions.).
 
 #### The device numbers
 As all of you certainly know, device nodes, which appear as files in the file system,
@@ -414,12 +414,12 @@ number, by which it is identified.
 
 The kernel needs to have a table telling it which driver maps to which major device number. (The minor device number is handled by the driver itself.)
 There are separate tables for character- and block devices, so that the major device number of a character device can be different from one of a block device.
-Since NetBSD 2.0-current, these tables are created automatically by config(8)
-in the file devsw.c inside the kernels compilation directory (.
-Up until NetBSD 1.6-release, these tables are located in sys/arch/<arch>/<arch>/conf.c and need to be maintained by hand.).
-The list of major device numbers in sys/arch/<arch>/conf/majors.<arch> is used as a template,
-where <arch> represents the machine- / processor architecture, vax in our case.
-Therefore, the following line in sys/arch/vax/conf/majors.vax is necessary
+Since NetBSD 2.0-current, these tables are created automatically by `config(8)`
+in the file `devsw.c` inside the kernels compilation directory (.
+Up until NetBSD 1.6-release, these tables are located in `sys/arch/<arch>/<arch>/conf.c` and need to be maintained by hand.).
+The list of major device numbers in `sys/arch/<arch>/conf/majors.<arch>` is used as a template,
+where `<arch>` represents the machine- / processor architecture, `vax` in our case.
+Therefore, the following line in `sys/arch/vax/conf/majors.vax` is necessary
 to get the major device numbers:
 ```
 device-major rf  char 78 block 27  rf
@@ -427,11 +427,11 @@ device-major rf  char 78 block 27  rf
 The numbers 78 and 27 are used, since the last available entry used the numbers
 77 and 26 respectively.
 
-The file devsw.c contains the two tables bdevsw and cdevsw (
+The file `devsw.c` contains the two tables `bdevsw` and `cdevsw` (
 BlockDEViceSWitch and CharacterDEViceSWitch respectively. Both these tables have been available under the same name in UNIX V6 since 1976. See [Li 77]).
 The index of
-this table is the major device number. Each line in these tables conforms to a device and contains a pointer to the struct bdevsw data structure (or the struct
-cdevsw data structure) declared in the driver, which contains several function
+this table is the major device number. Each line in these tables conforms to a device and contains a pointer to the `struct bdevsw` data structure (or the `struct
+cdevsw` data structure) declared in the driver, which contains several function
 pointers depending on the device type:
 ```
 const struct bdevsw rf_bdevsw = {
@@ -461,23 +461,24 @@ const struct cdevsw rf_cdevsw = {
 ```
 
 These functions implement the different operations possible with the device
-in question, such as open, close, write, ioctl....
+in question, such as `open`, `close`, `write`, `ioctl`....
 If a driver does not
-implement one of these functions, it writes no<functionname> in its place, for
-example nommap. The last field in the cdevsw or bdevsw data structure is the device type. Currently, the following types are available: D DISK, D TAPE, D TTY.
-Block devices are understandably always of type D DISK. The device type determines which functions a driver has to implement:
+implement one of these functions, it writes `no<functionname>` in its place, for
+example `nommap`. The last field in the `cdevsw` or `bdevsw` data structure is the device type. Currently, the following types are available: `D_DISK`, `D_TAPE`, `D_TTY`.
+Block devices are understandably always of type `D_DISK`. The device type determines which functions a driver has to implement:
 
-D DISK: open, close, read, write, ioctl
+`**D_DISK**: open, close, read, write, ioctl`
 
-D TAPE: open, close, read, write, ioctl
+`**D_TAPE**: open, close, read, write, ioctl`
 
-D TTY: open, close, read, write, ioctl, stop, tty, poll
+`**D_TTY**: open, close, read, write, ioctl, stop, tty, poll`
 
-D DISK and D TAPE therefore do not need to provide stop, tty, poll. (Question to all gurus: What about drivers, which also implement mmap(2)?) As we
+`D_DISK` and `D_TAPE` therefore do not need to provide `stop`, `tty`, `poll`. (Question to all gurus: What about drivers, which also implement `mmap(2)`?) As we
 will see below, there are preprocessor macros to simplify the declaration of these
 functions. All these macros and the prepared data structures can be found in
-sys/sys/conf.h.
+`sys/sys/conf.h`.
 
+```
 dev_type_open(rfopen);
 dev_type_close(rfclose);
 dev_type_read(rfread);
@@ -486,9 +487,10 @@ dev_type_ioctl(rfioctl);
 dev_type_strategy(rfstrategy);
 dev_type_dump(rfdump);
 dev_type_size(rfsize);
+```
 
-### Data structures for autoconf(9)
-As mentioned in driver(9), the kernel uses a static struct, through which the
+### Data structures for `autoconf(9)`
+As mentioned in `driver(9)`, the kernel uses a static `struct`, through which the
 functions necessary for autoconf(9) are included. Since NetBSD 2.0-current,
 this declaration is done through a macro CFATTACH DECL. Since the rf(4) driver
 doesn't need the "detach" and "activate" functions, you simply pass NULL-pointers
