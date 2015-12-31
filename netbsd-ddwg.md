@@ -260,64 +260,64 @@ these busses, the driver can not simply loop through all the bus addresses to
 determine which devices do (and do not) exist.
 
 In the case of indirect configuration, the bus driver has to utilize the
-config search() function. config search() walks down the potential child
-device drivers in cfdata, i.e. it will call the foo match() function of all potential
-child device drivers. So the bus- / controller driver calls config search() only
-once to find all the child devices. The config attach() function of the driver
-of the located child device will therefore not be called. So the bus- / controller
-driver would have to search the cfdata table for the just found children and call
-config attach() for those. But I have not found any driver that does this. Es described under autoconf(9) in the section on config search(), you can achieve
-the same by using the func function parameter of config search(). This func
-function is provided by the bus- / controller driver. config search() calls this
-function for all the child device drivers found in the cfdata table. That function,
-on the other hand, calls the foo match() function of the child device driver and,
-should the child have located the device, the config attach() function of the
-child device driver. If a bus / controller supports direct configuration, as for example PCI or PNP-ISA, the bus driver calls config found sm() once for each
-child device. This function first calls config search() and then, if a child has
-been found, config attach(). The config attach() function reserves memory for the softc structure of the child device drivers and calls its foo attach()
-function. In this case, the submatch() is often NULL, or the config found()
-function is called immediately. The parent provides the print function , and
-passes a pointer to this function to config found sm(). The print function is
-called from within config attach(), after config attach() has printed a message like "foo at bar". The name parameter of the print function is then NULL.
-The print function should be used to output more detailed information on the
+`config_search()` function. `config_search()` walks down the potential child
+device drivers in `cfdata`, i.e. it will call the `foo_match()` function of all potential
+child device drivers. So the bus- / controller driver calls `config_search()` only
+once to find all the child devices. The `config_attach()` function of the driver
+of the located child device will therefore *not* be called. So the bus- / controller
+driver would have to search the `cfdata` table for the just found children and call
+`config_attach()` for those. But I have not found any driver that does this. Es described under `autoconf(9)` in the section on `config_search()`, you can achieve
+the same by using the `func` function parameter of `config_search()`. This `func`
+function is provided by the bus- / controller driver. `config_search()` calls this
+function for all the child device drivers found in the `cfdata` table. That function,
+on the other hand, calls the `foo_match()` function of the child device driver and,
+should the child have located the device, the `config_attach()` function of the
+child device driver. If a bus / controller supports direct configuration, as for example PCI or PNP-ISA, the bus driver calls `config_found_sm()` once for each
+child device. This function first calls `config_search()` and then, if a child has
+been found, `config_attach()`. The `config_attach()` function reserves memory for the `softc` structure of the child device drivers and calls its `foo_attach()`
+function. In this case, the `submatch()` is often `NULL`, or the `config_found()`
+function is called immediately. The parent provides the `print` function, and
+passes a pointer to this function to `config_found_sm()`. The `print` function is
+called from within `config_attach()`, after `config_attach()` has printed a message like "`foo at bar`". The `name` parameter of the `print` function is then `NULL`.
+The `print` function should be used to output more detailed information on the
 console about the child device, such as the exact device type, data transfer rate, ...
-If this is not desired, NULL may be passed in place of the function pointer.
+If this is not desired, `NULL` may be passed in place of the function pointer.
 
-Figure 2: calling chain of autoconf(9) functions
+Figure 2: calling chain of `autoconf(9)` functions
 
-But why do we look for the children using config search(), if the bus- /
+But why do we look for the children using `config_search()`, if the bus- /
 controller driver already noticed the presence of any child device? Well, while the
 child device may without any doubt be present, the question remains whether or
 not a driver for it is included in the current kernel. If there is no driver for this child
-device, then config search() fails and print (provided by the parent) is called
-directly instead of config attach(). During this call, the name parameter of the
-print function is a pointer to the name of the parents device. The print function
-should then print a message like "foo at bar". Usually, foo attach would
-print this message, but since no driver for foo is included in the kernel, there
-is no foo attach function. The print then returns either UNCONF or UNSUPP
-. Either the message "not configured" or "unsupported" will be appended
-to the message printed by print accordingly. If the driver does exist (at least
-in principle), but was not compiled into the current kernel, UNCONF is returned;
-UNSUPP, if the parent detects a child and knows that there isn't a driver available
-for it. Another reason for the use of config search() and foo match() under
+device, then `config_search()` fails and `print` (provided by the parent) is called
+directly instead of `config_attach()`. During this call, the `name` parameter of the
+`print` function is a pointer to the name of the parents device. The `print` function
+should then print a message like "`foo at bar`". Usually, `foo_attach` would
+print this message, but since no driver for `foo` is included in the kernel, there
+is no `foo_attach` function. The `print` then returns either `UNCONF` or `UNSUPP`
+. Either the message "`not configured`" or "`unsupported`" will be appended
+to the message printed by `print` accordingly. If the driver does exist (at least
+in principle), but was not compiled into the current kernel, `UNCONF` is returned;
+`UNSUPP`, if the parent detects a child and knows that there isn't a driver available
+for it. Another reason for the use of `config_search()` and `foo_match()` under
 direct configuration is explained in section 3.3.3. But that detail shall confuse use
 only lateron. ;-)
 
 Any questions?
 Hell yeah!
 Where exactly does the driver call
-config found() or config search() from? Well, that's easy: in its own
-foo attach() function. foo attach() initializes the driver, and looking for
+`config_found()` or `config_search()` from? Well, that's easy: in its own
+`foo_attach()` function. `foo_attach()` initializes the driver, and looking for
 your children is part of the initialization.
 
-All these pieces fall into place if, armed with this knowledge, you venture into the kernel source code and take a close look at the autoconf(9)
-interface as well as the involved "files.*" files.
+All these pieces fall into place if, armed with this knowledge, you venture into the kernel source code and take a close look at the `autoconf(9)`
+interface as well as the involved "`files.*`" files.
 Also of interest is
-sys/kern/subr autoconf.c, as well as the config search() (+mapply()),
-config found sm() and config attach() functions (you don't need to completely understand config attach() just yet). These few lines of code in
-sys/kern/subr autoconf.c are what it's all about.
+`sys/kern/subr_autoconf.c`, as well as the `config_search()` (+`mapply()`),
+`config_found_sm()` and `config_attach()` functions (you don't need to completely understand `config_attach()` just yet). These few lines of code in
+`sys/kern/subr_autoconf.c` are what it's all about.
 
-### bus space(9) and bus dma(9)
+### `bus_space(9)` and `bus_dma(9)`
 As mentioned above, one and the same driver core can be attached to different
 busses. In this special case, bus refers to a systembus, the addressspace of which
 can be mapped into the address space of the CPU, such as the QBus or PCI, for
@@ -328,22 +328,22 @@ be accessed indirectly through a hostadapter, possibly using a packet oriented
 protocol.
 
 The core of the driver uses only abstract functions to access the hardware using tags and handles. This makes it independent of the bus system. Part of
-this core of the driver may be several bus-attachments. These bus-attachments
-implement the cfattach and softc data structures described in driver(9) as
-well as the foo match() and foo attach() functions for each bus system separately. The foo attach() function "frobs" the tags and handles for the driver
-core. bus space(9) and bus dma(9) represent the system of NetBSD that accesses the hardware independent of the utilized bus system through the use of abstract functions. If you write a driver, you get bus space(9) and / or bus dma(9)
-tags and handles back which are passed to the foo match() and foo attach()
-functions. But you don't get bus space(9) / bus dma(9) tags and handles directly, but rather an attach-struct, specific to the according bus, which contains
-the bus space(9) / bus dma(9) tags and handles as well as other bus-specific
+this core of the driver may be several *bus-attachments*. These bus-attachments
+implement the `cfattach` and `softc` data structures described in `driver(9)` as
+well as the `foo_match()` and `foo_attach()` functions for each bus system separately. The `foo_attach()` function "frobs" the tags and handles for the driver
+core. `bus_space(9)` and `bus_dma(9)` represent the system of NetBSD that accesses the hardware independent of the utilized bus system through the use of abstract functions. If you write a driver, you get `bus_space(9)` and / or `bus_dma(9)`
+tags and handles back which are passed to the `foo_match()` and `foo_attach()`
+functions. But you don't get `bus_space(9)` / `bus_dma(9)` tags and handles directly, but rather an attach-`struct`, specific to the according bus, which contains
+the `bus_space(9)` / `bus_dma(9)` tags and handles as well as other bus-specific
 parameters.
 
-The bus space(9) / bus dma(9) tag is the abstract representation of the bushierarchy of a machine, while the handle represents an abstract address of a bus
+The `bus_space(9)` / `bus_dma(9)` tag is the abstract representation of the bushierarchy of a machine, while the handle represents an abstract address of a bus
 within this hierarchy. The structure of these tags and handles largely depends on
 the architecture of the specific hardware. Bus drivers for QBus, ISA, ... convert
 the locator values from the kernel configuration file into the appropriate handles.
 The actual driver does not need to take care of the structure or the content of these
 tags and handles, but can simply make use of them.
-Well, now it's about time to read bus space(9) and bus dma(9). ;-)
+Well, now it's about time to read `bus_space(9)` and `bus_dma(9)`. ;-)
 
 ## The autoconf(9) part of the rf(4) driver
 And here we go. We want to write a driver for the VAX. The rf(4) driver consists, from the point of view of autoconf(9), of two drivers. One driver for the
