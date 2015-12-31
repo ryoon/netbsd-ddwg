@@ -186,33 +186,33 @@ the hardware are hidden from it. Instead of manipulating the hardware directly,
 the driver utilizes abstract handles. These handles and the according functions are
 provided by the parent (i.e. the driver of the bussystem). Of course, all possible
 parents (`vsbus` and `ibus` in this case) for a given child (`le`, in this case) need to
-provide the same interfaces (Things get even more entertaining when we account for other architectures. le may also be
-attached to tc, pci, zbus, vme, dio, mainbus, sbus, ... .). These interfaces and the dependencies among the
+provide the same interfaces (Things get even more entertaining when we account for other architectures. `le` may also be
+attached to `tc`, `pci`, `zbus`, `vme`, `dio`, `mainbus`, `sbus`, ... .). These interfaces and the dependencies among the
 drivers and the other kernel subsystems are described in more detail via so-called
 *attributes* further down.
 
-### sys/kern/subr autoconf.c
-The functions found in sys/kern/subr autoconf.c walk down the cfdata table in ioconf.c on boot and descend down the entire device tree. For this to work
+### `sys/kern/subr_autoconf.c`
+The functions found in `sys/kern/subr_autoconf.c` walk down the `cfdata` table in `ioconf.c` on boot and descend down the entire device tree. For this to work
 properly, each driver needs to implement a special interface for these functions.
 
 The reader is advised to read the following manual pages, preferably in this
-order: driver(9), config(9), autoconf(9).
+order: `driver(9)`, `config(9)`, `autoconf(9)`.
 
 ### Attributes and Locators
 Something that unfortunately does not become quite clear are the differences and
-interrelations among the interface- and plain attributes and locators. A plain attribute simply signifies that a driver has a certain property, such as, for example,
+interrelations among the interface- and plain attributes and locators. A *plain attribute* simply signifies that a driver has a certain property, such as, for example,
 that the driver enables an ethernet or a serial interface. This allows several similar
 drivers to associate themselves with the attribute and thusly utilize the same source
 code. When a driver is included in a kernel that requires a certain attribute, the
 source code snippets that provide the attribute are then included in the kernel as
-well. ifnet, ether, tty, isadma, ... are examples of such plain attributes.
+well. `ifnet`, `ether`, `tty`, `isadma`, ... are examples of such plain attributes.
 
 An interface attribute describes a logical software interface between some devices, typically a bus driver and the attached drivers. Usually, it contains one or
 more so-called "locators". A locator contains the "position" on the bus / controller
-at which the child-device can be found. In the above mentioned kernel configuration file, for example, there exists the qe device, which attaches to the uba (
-Before the QBus, there was the very similar UniBus; UniBus Aadapters then became ubas.  Since both busses are very similar, a single bus driver is sufficient for both.),
-meaning the QBus driver implements the software interface labeled with the attribute uba, to which the device qe refers. csr is the (only) locator of the interface
-attribute uba.
+at which the child-device can be found. In the above mentioned kernel configuration file, for example, there exists the qe device, which attaches to the `uba` (
+Before the QBus, there was the very similar UniBus; *U*ni*Bus* Aadapters then became `ubas`.  Since both busses are very similar, a single bus driver is sufficient for both.),
+meaning the QBus driver implements the software interface labeled with the attribute `uba`, to which the device qe refers. `csr` is the (only) locator of the interface
+attribute `uba`.
 
 ```
 device uba { csr }
@@ -224,28 +224,28 @@ attach qe at uba
 file dev/qbus/if_qe.c                qe
 ```
 
-The above is an excerpt of sys/dev/qbus/files.uba. The first line introduces the interface attribute uba with the locator csr. The following line instructs
-config(8) to include the file dev/qbus/uba.c in the kernel compilation if a device is associated with the uba attribute. The last three lines define the qe device.
-It is associated with the three plain attributes ifnet, ether, arp, attaches to
-the interface attribute uba and the source code is found in dev/qbus/if qe.c.
+The above is an excerpt of `sys/dev/qbus/files.uba`. The first line introduces the interface attribute `uba` with the locator `csr`. The following line instructs
+`config(8)` to include the file `dev/qbus/uba.c` in the kernel compilation if a device is associated with the `uba` attribute. The last three lines define the qe device.
+It is associated with the three plain attributes `ifnet`, `ether`, `arp`, attaches to
+the interface attribute `uba` and the source code is found in `dev/qbus/if_qe.c`.
 
-An example of an interface attribute with multiple locators is isa, which
-supports the locators port, size, iomem, iosiz, irq, drq, drq2. See the
-declaration in sys/dev/isa/files.isa. The locators given in the kernel configuration file directly lead to the according values in the void *aux parameters of
-the foo match and foo attach functions. (Well, read driver(9)? ;-) )
+An example of an interface attribute with multiple locators is `isa`, which
+supports the locators `port`, `size`, `iomem`, `iosiz`, `irq`, `drq`, `drq2`. See the
+declaration in `sys/dev/isa/files.isa`. The locators given in the kernel configuration file directly lead to the according values in the `void *aux` parameters of
+the `foo_match` and `foo_attach` functions. (Well, read `driver(9)`? ;-) )
 
 Locators do not have to contain absolute values. Depending on the capabilities of the driver, wildcards may be possible. A typical candidate for wildcards
-is a bus- or controller driver supporting direct configuration. The "files.*" file
+is a bus- or controller driver supporting direct configuration. The "`files.*`" file
 defining the interface attribute has to provide standard values for such a locator
 in this case. Typical standard values are 0 for bus addresses or -1 for common
 indices. The chapter 3.1.2 shows an example of such a case. If no standard values are assigned, then the kernel configuration file needs to provide a value and
-wildcards are not allowed. A locator declared in [] is optional.
+wildcards are not allowed. A locator declared in `[]` is optional.
 
 ### Where are my children?
 There's one question the reader should have by now: Well, sure, the driver / device
 is found. But how and where does my driver look for its children? (If the driver
-does support a bus or a controller.) What's up with these config search() and
-config found sm() functions?
+does support a bus or a controller.) What's up with these `config_search()` and
+`config_found_sm()` functions?
 
 There are two cases when integrating a device on a bus:
 
